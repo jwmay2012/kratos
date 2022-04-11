@@ -283,7 +283,7 @@ func (s *Strategy) Settings(w http.ResponseWriter, r *http.Request, f *settings.
 						return nil, errors.WithStack(err)
 					}
 				} else {
-					return nil, ErrApiTokenMissing
+					return nil, ErrIDTokenMissing
 				}
 			} else {
 				return nil, ErrProviderNoAPISupport

@@ -7,13 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/go-jsonnet"
-	"github.com/tidwall/gjson"
-
-	"github.com/ory/kratos/schema"
 	"github.com/ory/x/decoderx"
-	"github.com/ory/x/fetcher"
-
 	"golang.org/x/oauth2"
 
 	"github.com/ory/kratos/session"
@@ -201,7 +195,20 @@ func (s *Strategy) Login(w http.ResponseWriter, r *http.Request, f *login.Flow, 
 			return nil, s.handleError(w, r, f, pid, nil, err)
 		}
 
-		http.Redirect(w, r, c.AuthCodeURL(state, provider.AuthCodeURLOptions(req)...), http.StatusFound)
+		f.Active = s.ID()
+		if err = s.d.LoginFlowPersister().UpdateLoginFlow(r.Context(), f); err != nil {
+			return nil, s.handleError(w, r, f, pid, nil, errors.WithStack(herodot.ErrInternalServerError.WithReason("Could not update flow").WithDebug(err.Error())))
+		}
+
+		codeURL := c.AuthCodeURL(state, provider.AuthCodeURLOptions(req)...)
+		if x.IsJSONRequest(r) {
+			s.d.Writer().WriteError(w, r, flow.NewBrowserLocationChangeRequiredError(codeURL))
+		} else {
+			http.Redirect(w, r, codeURL, http.StatusSeeOther)
+		}
+
+		return nil, errors.WithStack(flow.ErrCompletedByStrategy)
+
 	} else if f.Type == flow.TypeAPI {
 		var claims *Claims
 		if apiFlowProvider, ok := provider.(APIFlowProvider); ok {
@@ -211,7 +218,7 @@ func (s *Strategy) Login(w http.ResponseWriter, r *http.Request, f *login.Flow, 
 					return nil, errors.WithStack(err)
 				}
 			} else {
-				return nil, s.handleError(w, r, f, p.Provider, nil, ErrApiTokenMissing)
+				return nil, s.handleError(w, r, f, p.Provider, nil, ErrIDTokenMissing)
 			}
 		} else {
 			return nil, s.handleError(w, r, f, p.Provider, nil, ErrProviderNoAPISupport)
@@ -221,115 +228,14 @@ func (s *Strategy) Login(w http.ResponseWriter, r *http.Request, f *login.Flow, 
 			identity.CredentialsTypeOIDC,
 			identity.OIDCUniqueID(provider.Config().ID, claims.Subject))
 		if err != nil {
-			if !errors.Is(err, sqlcon.ErrNoRows) {
-				return nil, err
+			if errors.Is(err, sqlcon.ErrNoRows) {
+				return nil, s.handleError(w, r, f, p.Provider, nil, NewUserNotFoundError())
 			}
-			i = identity.NewIdentity(s.d.Config(r.Context()).DefaultIdentityTraitsSchemaID())
-
-			fetch := fetcher.NewFetcher(fetcher.WithClient(s.d.HTTPClient(r.Context())))
-			jn, err := fetch.Fetch(provider.Config().Mapper)
-			if err != nil {
-				return nil, s.handleError(w, r, f, provider.Config().ID, nil, err)
-			}
-
-			var jsonClaims bytes.Buffer
-			if err := json.NewEncoder(&jsonClaims).Encode(claims); err != nil {
-				return nil, s.handleError(w, r, f, provider.Config().ID, nil, err)
-			}
-
-			vm := jsonnet.MakeVM()
-			vm.ExtCode("claims", jsonClaims.String())
-			evaluated, err := vm.EvaluateAnonymousSnippet(provider.Config().Mapper, jn.String())
-			if err != nil {
-				return nil, s.handleError(w, r, f, provider.Config().ID, nil, err)
-			} else if traits := gjson.Get(evaluated, "identity.traits"); !traits.IsObject() {
-				i.Traits = []byte{'{', '}'}
-				s.d.Logger().
-					WithRequest(r).
-					WithField("oidc_provider", provider.Config().ID).
-					WithSensitiveField("oidc_claims", claims).
-					WithField("mapper_jsonnet_output", evaluated).
-					WithField("mapper_jsonnet_url", provider.Config().Mapper).
-					Error("OpenID Connect Jsonnet mapper did not return an object for key identity.traits. Please check your Jsonnet code!")
-			} else {
-				i.Traits = []byte(traits.Raw)
-			}
-
-			s.d.Logger().
-				WithRequest(r).
-				WithField("oidc_provider", provider.Config().ID).
-				WithSensitiveField("oidc_claims", claims).
-				WithField("mapper_jsonnet_output", evaluated).
-				WithField("mapper_jsonnet_url", provider.Config().Mapper).
-				Debug("OpenID Connect Jsonnet mapper completed.")
-
-			//option, err := decoderRegistration(s.d.Config(r.Context()).DefaultIdentityTraitsSchemaURL().String())
-			//if err != nil {
-			//	return nil, s.handleError(w, r, f, provider.Config().ID, nil, err)
-			//}
-			//
-			//i.Traits, err = merge(container.Form.Encode(), json.RawMessage(i.Traits), option)
-			//if err != nil {
-			//	return nil, s.handleError(w, r, f, provider.Config().ID, nil, err)
-			//}
-
-			// Validate the identity itself
-			if err := s.d.IdentityValidator().Validate(r.Context(), i); err != nil {
-				return nil, s.handleError(w, r, f, provider.Config().ID, i.Traits, err)
-			}
-
-			creds, err := identity.NewCredentialsOIDC(
-				idToken,
-				"",
-				"",
-				provider.Config().ID,
-				claims.Subject)
-			if err != nil {
-				return nil, s.handleError(w, r, f, provider.Config().ID, i.Traits, err)
-			}
-
-			i.SetCredentials(s.ID(), *creds)
-
-			if err := s.d.IdentityManager().Create(r.Context(), i); err != nil {
-				if errors.Is(err, sqlcon.ErrUniqueViolation) {
-					return nil, schema.NewDuplicateCredentialsError()
-				}
-				return nil, errors.WithStack(err)
-			}
-
-			//i.Traits = identity.Traits(fmt.Sprintf("{\"phone\": \"%s\"}", p.Phone))
-			//
-			//if err := s.d.IdentityValidator().Validate(r.Context(), i); err != nil {
-			//	return nil, err
-			//} else if err := s.d.IdentityManager().Create(r.Context(), i); err != nil {
-			//	if errors.Is(err, sqlcon.ErrUniqueViolation) {
-			//		return nil, schema.NewDuplicateCredentialsError()
-			//	}
-			//	return nil, err
-			//}
-			//
-			//s.d.Audit().
-			//	WithRequest(r).
-			//	WithField("identity_id", i.ID).
-			//	Info("A new identity has registered using self-service login auto-provisioning.")
-
+			return nil, err
 		}
 		return i, nil
+
 	} else {
 		return nil, errors.WithStack(errors.New(fmt.Sprintf("Not supported flow type: %s", f.Type)))
 	}
-
-	f.Active = s.ID()
-	if err = s.d.LoginFlowPersister().UpdateLoginFlow(r.Context(), f); err != nil {
-		return nil, s.handleError(w, r, f, pid, nil, errors.WithStack(herodot.ErrInternalServerError.WithReason("Could not update flow").WithDebug(err.Error())))
-	}
-
-	codeURL := c.AuthCodeURL(state, provider.AuthCodeURLOptions(req)...)
-	if x.IsJSONRequest(r) {
-		s.d.Writer().WriteError(w, r, flow.NewBrowserLocationChangeRequiredError(codeURL))
-	} else {
-		http.Redirect(w, r, codeURL, http.StatusSeeOther)
-	}
-
-	return nil, errors.WithStack(flow.ErrCompletedByStrategy)
 }

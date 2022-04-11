@@ -200,10 +200,6 @@ func (s *Strategy) validateFlow(ctx context.Context, r *http.Request, rid uuid.U
 	}
 
 	if ar, err := s.d.RegistrationFlowPersister().GetRegistrationFlow(ctx, rid); err == nil {
-		if ar.Type != flow.TypeBrowser {
-			return ar, ErrAPIFlowNotSupported
-		}
-
 		if err := ar.Valid(); err != nil {
 			return ar, err
 		}
