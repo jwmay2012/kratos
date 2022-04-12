@@ -72,7 +72,7 @@ type SubmitSelfServiceRegistrationFlowWithOidcMethodBody struct {
 	// Only used in API-type flows, when an id token has been received by mobile app directly from oidc provider.
 	//
 	// required: false
-	IdToken string `json:"id_token"`
+	IDToken string `json:"id_token"`
 }
 
 func (s *Strategy) newLinkDecoder(p interface{}, r *http.Request) error {
@@ -127,7 +127,7 @@ func (s *Strategy) Register(w http.ResponseWriter, r *http.Request, f *registrat
 			return s.handleError(w, r, f, "", nil, err)
 		}
 
-		idToken = p.IdToken
+		idToken = p.IDToken
 		pid = p.Provider
 	}
 
@@ -182,7 +182,7 @@ func (s *Strategy) Register(w http.ResponseWriter, r *http.Request, f *registrat
 		var claims *Claims
 		if apiFlowProvider, ok := provider.(APIFlowProvider); ok {
 			if len(idToken) > 0 {
-				claims, err = apiFlowProvider.ClaimsFromIdToken(r.Context(), idToken)
+				claims, err = apiFlowProvider.ClaimsFromIDToken(r.Context(), idToken)
 				if err != nil {
 					return errors.WithStack(err)
 				}

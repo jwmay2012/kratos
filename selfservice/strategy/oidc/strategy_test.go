@@ -403,7 +403,7 @@ func TestStrategy(t *testing.T) {
 			var values = func(v url.Values) {
 				v.Set("method", "oidc")
 				v.Set("provider", "valid")
-				v.Set("id_token", tokens.IdToken)
+				v.Set("id_token", tokens.IDToken)
 			}
 
 			t.Run("case=should pass registration", func(t *testing.T) {
@@ -452,7 +452,7 @@ func TestStrategy(t *testing.T) {
 			var values = func(v url.Values) {
 				v.Set("method", "oidc")
 				v.Set("provider", "valid")
-				v.Set("id_token", tokens.IdToken)
+				v.Set("id_token", tokens.IDToken)
 			}
 
 			body := testhelpers.SubmitLoginForm(t, true, nil, ts, values,

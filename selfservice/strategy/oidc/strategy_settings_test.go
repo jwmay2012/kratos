@@ -432,7 +432,7 @@ func TestSettingsStrategy(t *testing.T) {
 				values := url.Values{}
 				values.Add("csrf_token", x.FakeCSRFToken)
 				values.Add("link", provider)
-				values.Add("id_token", tokens.IdToken)
+				values.Add("id_token", tokens.IDToken)
 
 				testhelpers.SettingsMakeRequest(t, true, false, f, agents[agent],
 					testhelpers.EncodeFormAsJSON(t, true, values))

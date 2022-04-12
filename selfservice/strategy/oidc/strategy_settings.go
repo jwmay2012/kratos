@@ -211,7 +211,7 @@ type submitSelfServiceSettingsFlowWithOidcMethodBody struct {
 	// Only used in API-type flows, when an id token has been received by mobile app directly from oidc provider.
 	//
 	// required: false
-	IdToken string `json:"id_token"`
+	IDToken string `json:"id_token"`
 }
 
 func (p *submitSelfServiceSettingsFlowWithOidcMethodBody) GetFlowID() uuid.UUID {
@@ -276,9 +276,9 @@ func (s *Strategy) Settings(w http.ResponseWriter, r *http.Request, f *settings.
 			var claims *Claims
 			token := &oauth2.Token{}
 			if apiFlowProvider, ok := provider.(APIFlowProvider); ok {
-				if len(p.IdToken) > 0 {
-					token = token.WithExtra(map[string]string{"id_token": p.IdToken})
-					claims, err = apiFlowProvider.ClaimsFromIdToken(r.Context(), p.IdToken)
+				if len(p.IDToken) > 0 {
+					token = token.WithExtra(map[string]string{"id_token": p.IDToken})
+					claims, err = apiFlowProvider.ClaimsFromIDToken(r.Context(), p.IDToken)
 					if err != nil {
 						return nil, errors.WithStack(err)
 					}

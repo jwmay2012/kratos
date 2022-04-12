@@ -316,7 +316,7 @@ func AssertSystemError(t *testing.T, errTS *httptest.Server, res *http.Response,
 }
 
 type oauthTokens struct {
-	IdToken     string `json:"id_token"`
+	IDToken     string `json:"id_token"`
 	AccessToken string `json:"access_token"`
 }
 
@@ -385,7 +385,7 @@ func getOauthTokens(
 	var tokens oauthTokens
 
 	require.NoError(t, json.NewDecoder(bytes.NewBuffer(body)).Decode(&tokens))
-	require.NotNil(t, tokens.IdToken, "%s", body)
+	require.NotNil(t, tokens.IDToken, "%s", body)
 
 	return nil, &tokens
 }

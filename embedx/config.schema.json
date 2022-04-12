@@ -449,7 +449,7 @@
         "requested_claims": {
           "$ref": "#/definitions/OIDCClaims"
         },
-        "audiences": {
+        "allowed_audiences": {
           "title": "List of values to check audience field of ID Token",
           "description": "The audience field of ID Token should be equal to one of the items in this list",
           "type": "array",

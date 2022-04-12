@@ -59,7 +59,7 @@ func (m *ProviderMicrosoft) Claims(ctx context.Context, exchange *oauth2.Token) 
 		return nil, errors.WithStack(ErrIDTokenMissing)
 	}
 
-	claims, err := m.ClaimsFromIdToken(ctx, raw)
+	claims, err := m.ClaimsFromIDToken(ctx, raw)
 	if err != nil {
 		return nil, err
 	}
@@ -67,10 +67,10 @@ func (m *ProviderMicrosoft) Claims(ctx context.Context, exchange *oauth2.Token) 
 	return m.updateSubject(ctx, claims, exchange)
 }
 
-func (m *ProviderMicrosoft) ClaimsFromIdToken(ctx context.Context, rawIdToken string) (*Claims, error) {
+func (m *ProviderMicrosoft) ClaimsFromIDToken(ctx context.Context, rawIDToken string) (*Claims, error) {
 	parser := new(jwt.Parser)
 	unverifiedClaims := microsoftUnverifiedClaims{}
-	if _, _, err := parser.ParseUnverified(rawIdToken, &unverifiedClaims); err != nil {
+	if _, _, err := parser.ParseUnverified(rawIDToken, &unverifiedClaims); err != nil {
 		return nil, err
 	}
 
@@ -84,7 +84,7 @@ func (m *ProviderMicrosoft) ClaimsFromIdToken(ctx context.Context, rawIdToken st
 		return nil, errors.WithStack(herodot.ErrInternalServerError.WithReasonf("Unable to initialize OpenID Connect Provider: %s", err))
 	}
 
-	return m.verifyAndDecodeClaimsWithProvider(ctx, p, rawIdToken)
+	return m.verifyAndDecodeClaimsWithProvider(ctx, p, rawIDToken)
 }
 
 func (m *ProviderMicrosoft) updateSubject(ctx context.Context, claims *Claims, exchange *oauth2.Token) (*Claims, error) {

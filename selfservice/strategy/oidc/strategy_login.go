@@ -71,7 +71,7 @@ type SubmitSelfServiceLoginFlowWithOidcMethodBody struct {
 	// Only used in API-type flows, when an id token has been received by mobile app directly from oidc provider.
 	//
 	// required: false
-	IdToken string `json:"id_token"`
+	IDToken string `json:"id_token"`
 }
 
 func (s *Strategy) processLogin(w http.ResponseWriter, r *http.Request, a *login.Flow, token *oauth2.Token, claims *Claims, provider Provider, container *authCodeContainer) (*registration.Flow, error) {
@@ -152,7 +152,7 @@ func (s *Strategy) Login(w http.ResponseWriter, r *http.Request, f *login.Flow, 
 			return nil, s.handleError(w, r, f, "", nil, err)
 		}
 
-		idToken = p.IdToken
+		idToken = p.IDToken
 		pid = p.Provider
 	}
 
@@ -213,7 +213,7 @@ func (s *Strategy) Login(w http.ResponseWriter, r *http.Request, f *login.Flow, 
 		var claims *Claims
 		if apiFlowProvider, ok := provider.(APIFlowProvider); ok {
 			if len(idToken) > 0 {
-				claims, err = apiFlowProvider.ClaimsFromIdToken(r.Context(), idToken)
+				claims, err = apiFlowProvider.ClaimsFromIDToken(r.Context(), idToken)
 				if err != nil {
 					return nil, errors.WithStack(err)
 				}

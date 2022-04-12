@@ -97,7 +97,7 @@ type Configuration struct {
 
 	// List of values to check audience field of ID Token.
 	// The audience field of ID Token should be equal to one of the items in this list.
-	Audiences []string `json:"audiences"`
+	AllowedAudiences []string `json:"allowed_audiences"`
 }
 
 func (p Configuration) Redir(public *url.URL) string {

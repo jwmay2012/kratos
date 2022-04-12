@@ -2,8 +2,6 @@ package oidc
 
 import (
 	"context"
-	"fmt"
-
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 
@@ -84,19 +82,19 @@ func (g *ProviderGenericOIDC) AuthCodeURLOptions(r ider) []oauth2.AuthCodeOption
 	return options
 }
 
-func (g *ProviderGenericOIDC) verifyAndDecodeClaimsWithProvider(ctx context.Context, provider *gooidc.Provider, rawIdToken string) (*Claims, error) {
-	skipClientIDCheck := g.config.Audiences != nil && len(g.config.Audiences) > 0
+func (g *ProviderGenericOIDC) verifyAndDecodeClaimsWithProvider(ctx context.Context, provider *gooidc.Provider, rawIDToken string) (*Claims, error) {
+	skipClientIDCheck := g.config.AllowedAudiences != nil && len(g.config.AllowedAudiences) > 0
 	token, err := provider.
 		Verifier(&gooidc.Config{
 			ClientID:          g.config.ClientID,
 			SkipClientIDCheck: skipClientIDCheck,
 		}).
-		Verify(ctx, rawIdToken)
+		Verify(ctx, rawIDToken)
 	if err != nil {
 		return nil, errors.WithStack(herodot.ErrBadRequest.WithReasonf("%s", err))
 	}
 	if skipClientIDCheck {
-		if err := verifyAudience(token.Audience, g.config.Audiences); err != nil {
+		if err := verifyAudience(token.Audience, g.config.AllowedAudiences); err != nil {
 			return nil, errors.WithStack(herodot.ErrBadRequest.WithReasonf("%s", err))
 		}
 	}
@@ -117,7 +115,7 @@ func verifyAudience(received []string, expected []string) error {
 			}
 		}
 	}
-	return fmt.Errorf("oidc: audience not valid: %v", received)
+	return errors.Errorf("oidc: audience not valid: %v", received)
 }
 
 func (g *ProviderGenericOIDC) Claims(ctx context.Context, exchange *oauth2.Token) (*Claims, error) {
@@ -126,14 +124,14 @@ func (g *ProviderGenericOIDC) Claims(ctx context.Context, exchange *oauth2.Token
 		return nil, errors.WithStack(ErrIDTokenMissing)
 	}
 
-	return g.ClaimsFromIdToken(ctx, raw)
+	return g.ClaimsFromIDToken(ctx, raw)
 }
 
-func (g *ProviderGenericOIDC) ClaimsFromIdToken(ctx context.Context, rawIdToken string) (*Claims, error) {
+func (g *ProviderGenericOIDC) ClaimsFromIDToken(ctx context.Context, rawIDToken string) (*Claims, error) {
 	p, err := g.provider(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	return g.verifyAndDecodeClaimsWithProvider(ctx, p, rawIdToken)
+	return g.verifyAndDecodeClaimsWithProvider(ctx, p, rawIDToken)
 }
