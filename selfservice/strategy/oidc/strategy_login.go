@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/ory/x/decoderx"
 	"golang.org/x/oauth2"
+
+	"github.com/ory/x/decoderx"
 
 	"github.com/ory/kratos/session"
 

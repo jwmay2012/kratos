@@ -1,11 +1,12 @@
 package oidc
 
 import (
+	"github.com/pkg/errors"
+
 	"github.com/ory/herodot"
 	"github.com/ory/jsonschema/v3"
 	"github.com/ory/kratos/schema"
 	"github.com/ory/kratos/text"
-	"github.com/pkg/errors"
 )
 
 var (

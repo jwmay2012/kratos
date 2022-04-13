@@ -2,6 +2,7 @@ package oidc
 
 import (
 	"context"
+
 	"github.com/pkg/errors"
 	"golang.org/x/oauth2"
 
