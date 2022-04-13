@@ -245,6 +245,7 @@ func newOIDCProvider(
 	clientID string,
 	clientSecret string,
 	testCallbackUrl string,
+	allowedAudiences []string,
 ) oidc.Configuration {
 	redir := []string{
 		kratos.URL + oidc.RouteBase + "/callback/" + id,
@@ -258,12 +259,13 @@ func newOIDCProvider(
 		clientSecret)
 
 	return oidc.Configuration{
-		Provider:     "generic",
-		ID:           id,
-		ClientID:     clientID,
-		ClientSecret: "secret",
-		IssuerURL:    hydraPublic + "/",
-		Mapper:       "file://./stub/oidc.hydra.jsonnet",
+		Provider:         "generic",
+		ID:               id,
+		ClientID:         clientID,
+		ClientSecret:     "secret",
+		IssuerURL:        hydraPublic + "/",
+		Mapper:           "file://./stub/oidc.hydra.jsonnet",
+		AllowedAudiences: allowedAudiences,
 	}
 }
 

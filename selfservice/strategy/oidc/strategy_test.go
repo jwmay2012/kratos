@@ -72,7 +72,7 @@ func TestStrategy(t *testing.T) {
 	viperSetProviderConfig(
 		t,
 		conf,
-		newOIDCProvider(t, ts, remotePublic, remoteAdmin, "valid", clientID, clientSecret, testCallbackUrl),
+		newOIDCProvider(t, ts, remotePublic, remoteAdmin, "valid", clientID, clientSecret, testCallbackUrl, nil),
 		oidc.Configuration{
 			Provider:     "generic",
 			ID:           "invalid-issuer",
@@ -81,6 +81,8 @@ func TestStrategy(t *testing.T) {
 			IssuerURL:    strings.Replace(remotePublic, "127.0.0.1", "localhost", 1) + "/",
 			Mapper:       "file://./stub/oidc.hydra.jsonnet",
 		},
+		newOIDCProvider(t, ts, remotePublic, remoteAdmin, "check_audience", clientID, clientSecret, testCallbackUrl,
+			[]string{"test.audience"}),
 	)
 
 	conf.MustSet(config.ViperKeySelfServiceRegistrationEnabled, true)
@@ -376,6 +378,16 @@ func TestStrategy(t *testing.T) {
 
 		require.Contains(t, res.Request.URL.String(), uiTS.URL, "%s", body)
 		assert.Contains(t, gjson.GetBytes(body, "ui.nodes.#(attributes.name==traits.subject).messages.0.text").String(), "is not valid", "%s\n%s", gjson.GetBytes(body, "ui.nodes.#(attributes.name==traits.subject)").Raw, body)
+	})
+
+	t.Run("case=should fail because the audience is mismatching", func(t *testing.T) {
+		subject = "foo@bar.com"
+		scope = []string{"openid"}
+
+		r := newRegistrationFlowBrowser(t, returnTS.URL, time.Minute)
+		action := afv(t, r.ID, "check_audience")
+		_, body := makeRequest(t, "check_audience", action, url.Values{})
+		assert.Contains(t, gjson.GetBytes(body, "ui.messages.0.text").String(), "audience not valid", "%s", body)
 	})
 
 	t.Run("case=register and then login", func(t *testing.T) {
@@ -782,7 +794,7 @@ func TestPostEndpointRedirect(t *testing.T) {
 	viperSetProviderConfig(
 		t,
 		conf,
-		newOIDCProvider(t, publicTS, remotePublic, remoteAdmin, "apple", "client", "", ""),
+		newOIDCProvider(t, publicTS, remotePublic, remoteAdmin, "apple", "client", "", "", nil),
 	)
 	testhelpers.InitKratosServers(t, reg, publicTS, adminTS)
 

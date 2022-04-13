@@ -64,9 +64,9 @@ func TestSettingsStrategy(t *testing.T) {
 	viperSetProviderConfig(
 		t,
 		conf,
-		newOIDCProvider(t, publicTS, remotePublic, remoteAdmin, "ory", "ory", clientSecret, ""),
-		newOIDCProvider(t, publicTS, remotePublic, remoteAdmin, "google", clientID, clientSecret, testCallbackUrl),
-		newOIDCProvider(t, publicTS, remotePublic, remoteAdmin, "github", "github", clientSecret, ""),
+		newOIDCProvider(t, publicTS, remotePublic, remoteAdmin, "ory", "ory", clientSecret, "", nil),
+		newOIDCProvider(t, publicTS, remotePublic, remoteAdmin, "google", clientID, clientSecret, testCallbackUrl, nil),
+		newOIDCProvider(t, publicTS, remotePublic, remoteAdmin, "github", "github", clientSecret, "", nil),
 		//newOIDCProvider(t, publicTS, remotePublic, remoteAdmin, "valid", clientID, clientSecret, testCallbackUrl),
 	)
 	testhelpers.InitKratosServers(t, reg, publicTS, adminTS)
