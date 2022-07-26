@@ -173,7 +173,22 @@ func (e *HookExecutor) PostLoginHook(w http.ResponseWriter, r *http.Request, a *
 		return nil
 	}
 
-	x.ContentNegotiationRedirection(w, r, s.Declassify(), e.d.Writer(), returnTo.String())
+	isWebView, err := flow.IsWebViewFlow(e.d.Config(r.Context()), a)
+	if err != nil {
+		return err
+	}
+	if isWebView {
+		response := &APIFlowResponse{Session: s.Declassify(), Token: s.Token}
+		if _, required := e.requiresAAL2(r, s, a); required {
+			// If AAL is not satisfied, we omit the identity to preserve the user's privacy in case of a phishing attack.
+			response.Session.Identity = nil
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Location", returnTo.String())
+		e.d.Writer().WriteCode(w, r, http.StatusSeeOther, response)
+	} else {
+		x.ContentNegotiationRedirection(w, r, s.Declassify(), e.d.Writer(), returnTo.String())
+	}
 	return nil
 }
 

@@ -67,21 +67,22 @@ func TestStrategy(t *testing.T) {
 	ts, _ := testhelpers.NewKratosServerWithRouters(t, reg, routerP, routerA)
 
 	testCallbackUrl := newTestCallback(t, reg)
-	clientID := "client"
+	clientIDValid := "client-valid"
 	clientSecret := "secret"
+	webviewRedirectURI := ts.URL + "/self-service/success"
 	viperSetProviderConfig(
 		t,
 		conf,
-		newOIDCProvider(t, ts, remotePublic, remoteAdmin, "valid", clientID, clientSecret, testCallbackUrl, nil),
+		newOIDCProvider(t, ts, remotePublic, remoteAdmin, "valid", clientIDValid, clientSecret, testCallbackUrl, nil),
 		oidc.Configuration{
 			Provider:     "generic",
 			ID:           "invalid-issuer",
-			ClientID:     clientID,
+			ClientID:     "client-invalid-issuer",
 			ClientSecret: clientSecret,
 			IssuerURL:    strings.Replace(remotePublic, "127.0.0.1", "localhost", 1) + "/",
 			Mapper:       "file://./stub/oidc.hydra.jsonnet",
 		},
-		newOIDCProvider(t, ts, remotePublic, remoteAdmin, "check_audience", clientID, clientSecret, testCallbackUrl,
+		newOIDCProvider(t, ts, remotePublic, remoteAdmin, "check_audience", "client-check-audience", clientSecret, testCallbackUrl,
 			[]string{"test.audience"}),
 	)
 
@@ -89,6 +90,7 @@ func TestStrategy(t *testing.T) {
 	testhelpers.SetDefaultIdentitySchema(conf, "file://./stub/registration.schema.json")
 	conf.MustSet(config.HookStrategyKey(config.ViperKeySelfServiceRegistrationAfter,
 		identity.CredentialsTypeOIDC.String()), []config.SelfServiceHook{{Name: "session"}})
+	conf.MustSet(config.ViperKeySelfServiceWebViewRedirectURL, webviewRedirectURI)
 
 	t.Logf("Kratos Public URL: %s", ts.URL)
 	t.Logf("Kratos Error URL: %s", errTS.URL)
@@ -409,7 +411,7 @@ func TestStrategy(t *testing.T) {
 		t.Run("case=api", func(t *testing.T) {
 			subject = "register-then-login-api@ory.sh"
 
-			err, tokens := getOauthTokens(t, remotePublic, clientID, clientSecret, testCallbackUrl)
+			err, tokens := getOauthTokens(t, remotePublic, clientIDValid, clientSecret, testCallbackUrl)
 			require.NoError(t, err)
 
 			var values = func(v url.Values) {
@@ -428,6 +430,45 @@ func TestStrategy(t *testing.T) {
 				body := testhelpers.SubmitLoginForm(t, true, nil, ts, values,
 					false, false, http.StatusOK, ts.URL+login.RouteSubmitFlow)
 
+				assert.NotEmpty(t, gjson.Get(body, "session"), "%s", body)
+			})
+		})
+
+		t.Run("case=webview", func(t *testing.T) {
+			subject = "register-then-login-webview@ory.sh"
+
+			cj, err := cookiejar.New(&cookiejar.Options{})
+			require.NoError(t, err)
+			c := &http.Client{
+				Jar: cj,
+				CheckRedirect: func(req *http.Request, via []*http.Request) error {
+					if strings.HasSuffix(req.URL.String(), "/self-service/success") {
+						return http.ErrUseLastResponse
+					}
+					return nil
+				},
+			}
+
+			var values = func(v url.Values) {
+				v.Set("method", "oidc")
+				v.Set("provider", "valid")
+			}
+
+			t.Run("case=should pass registration", func(t *testing.T) {
+				body := testhelpers.SubmitRegistrationForm(t, false, c, ts, values,
+					false, http.StatusSeeOther, ts.URL+"/self-service/methods/oidc/callback/valid",
+					testhelpers.InitFlowWithReturnTo(webviewRedirectURI))
+
+				assert.NotEmpty(t, gjson.Get(body, "session_token"), "%s", body)
+				assert.NotEmpty(t, gjson.Get(body, "session"), "%s", body)
+			})
+
+			t.Run("case=should pass login", func(t *testing.T) {
+				body := testhelpers.SubmitLoginForm(t, false, c, ts, values,
+					false, false, http.StatusSeeOther, ts.URL+"/self-service/methods/oidc/callback/valid",
+					testhelpers.InitFlowWithReturnTo(webviewRedirectURI))
+
+				assert.NotEmpty(t, gjson.Get(body, "session_token"), "%s", body)
 				assert.NotEmpty(t, gjson.Get(body, "session"), "%s", body)
 			})
 		})
@@ -458,7 +499,7 @@ func TestStrategy(t *testing.T) {
 		scope = []string{"openid"}
 
 		t.Run("case=api should fail as user is not registered", func(t *testing.T) {
-			err, tokens := getOauthTokens(t, remotePublic, clientID, clientSecret, testCallbackUrl)
+			err, tokens := getOauthTokens(t, remotePublic, clientIDValid, clientSecret, testCallbackUrl)
 			require.NoError(t, err)
 
 			var values = func(v url.Values) {
