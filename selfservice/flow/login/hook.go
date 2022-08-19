@@ -184,6 +184,9 @@ func (e *HookExecutor) PostLoginHook(w http.ResponseWriter, r *http.Request, a *
 			response.Session.Identity = nil
 		}
 		w.Header().Set("Content-Type", "application/json")
+		query := returnTo.Query()
+		query.Set("session_token", s.Token)
+		returnTo.RawQuery = query.Encode()
 		w.Header().Set("Location", returnTo.String())
 		e.d.Writer().WriteCode(w, r, http.StatusSeeOther, response)
 	} else {

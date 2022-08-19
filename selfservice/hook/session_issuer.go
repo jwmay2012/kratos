@@ -3,6 +3,7 @@ package hook
 import (
 	"github.com/ory/kratos/driver/config"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/pkg/errors"
@@ -59,7 +60,14 @@ func (e *SessionIssuer) ExecutePostRegistrationPostPersistHook(w http.ResponseWr
 		response := &registration.APIFlowResponse{Session: s.Declassify(), Token: s.Token}
 
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Location", a.ReturnTo)
+		returnTo, err := url.Parse(a.ReturnTo)
+		if err != nil {
+			return err
+		}
+		query := returnTo.Query()
+		query.Set("session_token", s.Token)
+		returnTo.RawQuery = query.Encode()
+		w.Header().Set("Location", returnTo.String())
 		e.r.Writer().WriteCode(w, r, http.StatusSeeOther, response)
 
 		return errors.WithStack(registration.ErrHookAbortFlow)

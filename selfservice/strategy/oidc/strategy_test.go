@@ -442,7 +442,8 @@ func TestStrategy(t *testing.T) {
 			c := &http.Client{
 				Jar: cj,
 				CheckRedirect: func(req *http.Request, via []*http.Request) error {
-					if strings.HasSuffix(req.URL.String(), "/self-service/success") {
+					if strings.HasSuffix(req.URL.Path, "/self-service/success") {
+						assert.True(t, req.URL.Query().Has("session_token"))
 						return http.ErrUseLastResponse
 					}
 					return nil
