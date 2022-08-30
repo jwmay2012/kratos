@@ -10,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -69,7 +70,7 @@ func TestStrategy(t *testing.T) {
 	testCallbackUrl := newTestCallback(t, reg)
 	clientIDValid := "client-valid"
 	clientSecret := "secret"
-	webviewRedirectURI := ts.URL + "/self-service/success"
+	webviewRedirectURI := ts.URL + "/self-service/oidc/webview"
 	viperSetProviderConfig(
 		t,
 		conf,
@@ -442,7 +443,7 @@ func TestStrategy(t *testing.T) {
 			c := &http.Client{
 				Jar: cj,
 				CheckRedirect: func(req *http.Request, via []*http.Request) error {
-					if strings.HasSuffix(req.URL.Path, "/self-service/success") {
+					if strings.HasSuffix(req.URL.Path, "/success") {
 						assert.True(t, req.URL.Query().Has("session_token"))
 						return http.ErrUseLastResponse
 					}
@@ -575,28 +576,69 @@ func TestStrategy(t *testing.T) {
 		subject = "email-exist-with-password-strategy@ory.sh"
 		scope = []string{"openid"}
 
-		t.Run("case=create password identity", func(t *testing.T) {
-			i := identity.NewIdentity(config.DefaultIdentityTraitsSchemaID)
-			i.SetCredentials(identity.CredentialsTypePassword, identity.Credentials{
-				Identifiers: []string{subject},
-			})
-			i.Traits = identity.Traits(`{"subject":"` + subject + `"}`)
+		cj, err := cookiejar.New(&cookiejar.Options{})
+		require.NoError(t, err)
+		webViewHTTPClient := &http.Client{
+			Jar: cj,
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if strings.HasSuffix(req.URL.Path, "/error") {
+					assert.Equal(t, strconv.Itoa(int(text.ErrorValidationDuplicateCredentials)),
+						req.URL.Query().Get("code"), "%s", req.URL.String())
+					assert.Contains(t, req.URL.Query().Get("message"),
+						"account with the same", "%s", req.URL.String())
+					return http.ErrUseLastResponse
+				}
+				return nil
+			},
+		}
 
-			require.NoError(t, reg.PrivilegedIdentityPool().CreateIdentity(context.Background(), i))
+		var values = func(v url.Values) {
+			v.Set("method", "oidc")
+			v.Set("provider", "valid")
+		}
+
+		i := identity.NewIdentity(config.DefaultIdentityTraitsSchemaID)
+		i.SetCredentials(identity.CredentialsTypePassword, identity.Credentials{
+			Identifiers: []string{subject},
 		})
+		i.Traits = identity.Traits(`{"subject":"` + subject + `"}`)
+
+		require.NoError(t, reg.PrivilegedIdentityPool().CreateIdentity(context.Background(), i))
 
 		t.Run("case=should fail registration", func(t *testing.T) {
-			r := newRegistrationFlowBrowser(t, returnTS.URL, time.Minute)
-			action := afv(t, r.ID, "valid")
-			res, body := makeRequest(t, "valid", action, url.Values{})
-			aue(t, res, body, "An account with the same identifier (email, phone, username, ...) exists already.")
+			t.Run("case=browser", func(t *testing.T) {
+				r := newRegistrationFlowBrowser(t, returnTS.URL, time.Minute)
+				action := afv(t, r.ID, "valid")
+				res, body := makeRequest(t, "valid", action, url.Values{})
+				aue(t, res, body, "An account with the same identifier (email, phone, username, ...) exists already.")
+			})
+
+			t.Run("case=webview", func(t *testing.T) {
+				body := testhelpers.SubmitRegistrationForm(t, false, webViewHTTPClient, ts, values,
+					false, http.StatusFound, ts.URL+"/self-service/methods/oidc/callback/valid",
+					testhelpers.InitFlowWithReturnTo(webviewRedirectURI))
+
+				assert.Empty(t, gjson.Get(body, "session_token"), "%s", body)
+				assert.Empty(t, gjson.Get(body, "session"), "%s", body)
+			})
 		})
 
 		t.Run("case=should fail login", func(t *testing.T) {
-			r := newLoginFlowBrowser(t, returnTS.URL, time.Minute)
-			action := afv(t, r.ID, "valid")
-			res, body := makeRequest(t, "valid", action, url.Values{})
-			aue(t, res, body, "An account with the same identifier (email, phone, username, ...) exists already.")
+			t.Run("case=browser", func(t *testing.T) {
+				r := newLoginFlowBrowser(t, returnTS.URL, time.Minute)
+				action := afv(t, r.ID, "valid")
+				res, body := makeRequest(t, "valid", action, url.Values{})
+				aue(t, res, body, "An account with the same identifier (email, phone, username, ...) exists already.")
+			})
+
+			t.Run("case=webview", func(t *testing.T) {
+				body := testhelpers.SubmitLoginForm(t, false, webViewHTTPClient, ts, values,
+					false, false, http.StatusFound, ts.URL+"/self-service/methods/oidc/callback/valid",
+					testhelpers.InitFlowWithReturnTo(webviewRedirectURI))
+
+				assert.Empty(t, gjson.Get(body, "session_token"), "%s", body)
+				assert.Empty(t, gjson.Get(body, "session"), "%s", body)
+			})
 		})
 	})
 

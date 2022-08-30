@@ -4,6 +4,7 @@ import (
 	"github.com/ory/kratos/driver/config"
 	"net/http"
 	"net/url"
+	"path"
 	"time"
 
 	"github.com/pkg/errors"
@@ -64,6 +65,7 @@ func (e *SessionIssuer) ExecutePostRegistrationPostPersistHook(w http.ResponseWr
 		if err != nil {
 			return err
 		}
+		returnTo.Path = path.Join(returnTo.Path, "success")
 		query := returnTo.Query()
 		query.Set("session_token", s.Token)
 		returnTo.RawQuery = query.Encode()

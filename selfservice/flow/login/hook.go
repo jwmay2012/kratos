@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"path"
 	"time"
 
 	"github.com/pkg/errors"
@@ -184,6 +185,7 @@ func (e *HookExecutor) PostLoginHook(w http.ResponseWriter, r *http.Request, a *
 			response.Session.Identity = nil
 		}
 		w.Header().Set("Content-Type", "application/json")
+		returnTo.Path = path.Join(returnTo.Path, "success")
 		query := returnTo.Query()
 		query.Set("session_token", s.Token)
 		returnTo.RawQuery = query.Encode()

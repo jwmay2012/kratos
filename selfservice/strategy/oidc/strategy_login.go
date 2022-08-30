@@ -93,6 +93,9 @@ func (s *Strategy) processLogin(w http.ResponseWriter, r *http.Request, a *login
 			s.d.Logger().WithField("provider", provider.Config().ID).WithField("subject", claims.Subject).Debug("Received successful OpenID Connect callback but user is not registered. Re-initializing registration flow now.")
 
 			// This flow only works for browsers anyways.
+			query := r.URL.Query()
+			query.Set("return_to", a.ReturnTo)
+			r.URL.RawQuery = query.Encode()
 			aa, err := s.d.RegistrationHandler().NewRegistrationFlow(w, r, flow.TypeBrowser)
 			if err != nil {
 				return nil, s.handleError(w, r, a, provider.Config().ID, nil, err)
