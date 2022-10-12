@@ -137,11 +137,12 @@ func (s *ErrorHandler) WriteFlowError(
 				return
 			}
 
-			query := returnTo.Query()
-
-			query.Set("code", strconv.Itoa(int(f.UI.Messages[0].ID)))
-			query.Set("message", f.UI.Messages[0].Text)
-			returnTo.RawQuery = query.Encode()
+			if len(f.UI.Messages) > 0 {
+				query := returnTo.Query()
+				query.Set("code", strconv.Itoa(int(f.UI.Messages[0].ID)))
+				query.Set("message", f.UI.Messages[0].Text)
+				returnTo.RawQuery = query.Encode()
+			}
 			returnTo.Path = path.Join(returnTo.Path, "error")
 			redirectLocation = returnTo.String()
 
