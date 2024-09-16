@@ -11,6 +11,10 @@ import (
 	"net/url"
 	"strings"
 
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/ory/x/otelx"
+
 	"github.com/ory/kratos/x/webauthnx/js"
 
 	"github.com/go-webauthn/webauthn/protocol"
@@ -97,9 +101,11 @@ func (s *Strategy) decode(r *http.Request) (*updateRegistrationFlowWithPasskeyMe
 }
 
 func (s *Strategy) Register(w http.ResponseWriter, r *http.Request, regFlow *registration.Flow, ident *identity.Identity) (err error) {
-	ctx := r.Context()
+	ctx, span := s.d.Tracer(r.Context()).Tracer().Start(r.Context(), "selfservice.strategy.passkey.strategy.Register")
+	defer otelx.End(span, &err)
 
 	if regFlow.Type != flow.TypeBrowser {
+		span.SetAttributes(attribute.String("not_responsible_reason", "flow type is not browser"))
 		return flow.ErrStrategyNotResponsible
 	}
 
@@ -112,6 +118,7 @@ func (s *Strategy) Register(w http.ResponseWriter, r *http.Request, regFlow *reg
 
 	if params.Register == "" ||
 		params.Register == "true" { // The React SDK sends "true" on empty values, so we ignore these.
+		span.SetAttributes(attribute.String("not_responsible_reason", "register is empty"))
 		return flow.ErrStrategyNotResponsible
 	}
 

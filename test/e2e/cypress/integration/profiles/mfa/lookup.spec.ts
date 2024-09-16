@@ -34,6 +34,7 @@ context("2FA lookup secrets", () => {
       beforeEach(() => {
         cy.visit(base)
         cy.clearAllCookies()
+        cy.useConfig((builder) => builder.disableCodeMfa())
         email = gen.email()
         password = gen.password()
         cy.registerApi({
@@ -191,10 +192,9 @@ context("2FA lookup secrets", () => {
         cy.visit(settings)
         cy.get('button[name="lookup_secret_reveal"]').click()
         cy.getLookupSecrets().should((c) => {
-          let newCodes = codes
-          newCodes[0] = "Used"
-          newCodes[1] = "Used"
-          expect(c).to.eql(newCodes)
+          expect(c[0]).not.to.equal(codes[0])
+          expect(c[1]).not.to.equal(codes[1])
+          expect(c.slice(2)).to.eql(codes.slice(2))
         })
 
         // Regenerating the codes means the old one become invalid
@@ -234,9 +234,8 @@ context("2FA lookup secrets", () => {
         cy.visit(settings)
         cy.get('button[name="lookup_secret_reveal"]').click()
         cy.getLookupSecrets().should((c) => {
-          let newCodes = regenCodes
-          newCodes[0] = "Used"
-          expect(c).to.eql(newCodes)
+          expect(c[0]).not.to.equal(regenCodes[0])
+          expect(c.slice(1)).to.eql(regenCodes.slice(1))
         })
       })
 

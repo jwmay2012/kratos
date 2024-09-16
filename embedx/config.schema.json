@@ -567,6 +567,13 @@
           "enum": ["id_token", "userinfo"],
           "default": "id_token",
           "examples": ["id_token", "userinfo"]
+        },
+        "pkce": {
+          "title": "Proof Key for Code Exchange",
+          "description": "PKCE controls if the OpenID Connect OAuth2 flow should use PKCE (Proof Key for Code Exchange). IMPORTANT: If you set this to `force`, you must whitelist a different return URL for your OAuth2 client in the provider's configuration. Instead of <base-url>/self-service/methods/oidc/callback/<provider>, you must use <base-url>/self-service/methods/oidc/callback",
+          "type": "string",
+          "enum": ["auto", "never", "force"],
+          "default": "auto"
         }
       },
       "additionalProperties": false,
@@ -1574,6 +1581,13 @@
                       "pattern": "^([0-9]+(ns|us|ms|s|m|h))+$",
                       "default": "1h",
                       "examples": ["1h", "1m", "1s"]
+                    },
+                    "missing_credential_fallback_enabled": {
+                      "type": "boolean",
+                      "title": "Enable Code OTP as a Fallback",
+                      "description": "Enabling this allows users to sign in with the code method, even if their identity schema or their credentials are not set up to use the code method. If enabled, a verified address (such as an email) will be used to send the code to the user. Use with caution and only if actually needed.",
+
+                      "default": false
                     }
                   }
                 }

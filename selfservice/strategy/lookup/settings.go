@@ -9,6 +9,10 @@ import (
 	"net/http"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
+	"github.com/ory/x/otelx"
+
 	"github.com/tidwall/gjson"
 	"github.com/tidwall/sjson"
 
@@ -97,11 +101,14 @@ func (p *updateSettingsFlowWithLookupMethod) SetFlowID(rid uuid.UUID) {
 	p.Flow = rid.String()
 }
 
-func (s *Strategy) Settings(w http.ResponseWriter, r *http.Request, f *settings.Flow, ss *session.Session) (*settings.UpdateContext, error) {
+func (s *Strategy) Settings(w http.ResponseWriter, r *http.Request, f *settings.Flow, ss *session.Session) (_ *settings.UpdateContext, err error) {
+	ctx, span := s.d.Tracer(r.Context()).Tracer().Start(r.Context(), "selfservice.strategy.lookup.strategy.Settings")
+	defer otelx.End(span, &err)
+
 	var p updateSettingsFlowWithLookupMethod
 	ctxUpdate, err := settings.PrepareUpdate(s.d, w, r, f, ss, settings.ContinuityKey(s.SettingsStrategyID()), &p)
 	if errors.Is(err, settings.ErrContinuePreviousAction) {
-		return ctxUpdate, s.continueSettingsFlow(r, ctxUpdate, p)
+		return ctxUpdate, s.continueSettingsFlow(ctx, r, ctxUpdate, p)
 	} else if err != nil {
 		return ctxUpdate, s.handleSettingsError(w, r, ctxUpdate, p, err)
 	}
@@ -113,16 +120,17 @@ func (s *Strategy) Settings(w http.ResponseWriter, r *http.Request, f *settings.
 	if p.RegenerateLookup || p.RevealLookup || p.ConfirmLookup || p.DisableLookup {
 		// This method has only two submit buttons
 		p.Method = s.SettingsStrategyID()
-		if err := flow.MethodEnabledAndAllowed(r.Context(), f.GetFlowName(), s.SettingsStrategyID(), p.Method, s.d); err != nil {
+		if err := flow.MethodEnabledAndAllowed(ctx, f.GetFlowName(), s.SettingsStrategyID(), p.Method, s.d); err != nil {
 			return nil, s.handleSettingsError(w, r, ctxUpdate, p, err)
 		}
 	} else {
+		span.SetAttributes(attribute.String("not_responsible_reason", "neither reveal, regenerate, confirm, nor disable was set"))
 		return nil, errors.WithStack(flow.ErrStrategyNotResponsible)
 	}
 
 	// This does not come from the payload!
 	p.Flow = ctxUpdate.Flow.ID.String()
-	if err := s.continueSettingsFlow(r, ctxUpdate, p); err != nil {
+	if err := s.continueSettingsFlow(ctx, r, ctxUpdate, p); err != nil {
 		return ctxUpdate, s.handleSettingsError(w, r, ctxUpdate, p, err)
 	}
 
@@ -141,18 +149,17 @@ func (s *Strategy) decodeSettingsFlow(r *http.Request, dest interface{}) error {
 	)
 }
 
-func (s *Strategy) continueSettingsFlow(r *http.Request, ctxUpdate *settings.UpdateContext, p updateSettingsFlowWithLookupMethod) error {
-	ctx := r.Context()
+func (s *Strategy) continueSettingsFlow(ctx context.Context, r *http.Request, ctxUpdate *settings.UpdateContext, p updateSettingsFlowWithLookupMethod) error {
 	if p.ConfirmLookup || p.RevealLookup || p.RegenerateLookup || p.DisableLookup {
 		if err := flow.MethodEnabledAndAllowed(ctx, flow.SettingsFlow, s.SettingsStrategyID(), s.SettingsStrategyID(), s.d); err != nil {
 			return err
 		}
 
-		if err := flow.EnsureCSRF(s.d, r, ctxUpdate.Flow.Type, s.d.Config().DisableAPIFlowEnforcement(r.Context()), s.d.GenerateCSRFToken, p.CSRFToken); err != nil {
+		if err := flow.EnsureCSRF(s.d, r, ctxUpdate.Flow.Type, s.d.Config().DisableAPIFlowEnforcement(ctx), s.d.GenerateCSRFToken, p.CSRFToken); err != nil {
 			return err
 		}
 
-		if ctxUpdate.Session.AuthenticatedAt.Add(s.d.Config().SelfServiceFlowSettingsPrivilegedSessionMaxAge(r.Context())).Before(time.Now()) {
+		if ctxUpdate.Session.AuthenticatedAt.Add(s.d.Config().SelfServiceFlowSettingsPrivilegedSessionMaxAge(ctx)).Before(time.Now()) {
 			return errors.WithStack(settings.NewFlowNeedsReAuth())
 		}
 	} else {
@@ -329,7 +336,7 @@ func (s *Strategy) identityHasLookup(ctx context.Context, id uuid.UUID) (bool, e
 		return false, err
 	}
 
-	count, err := s.CountActiveMultiFactorCredentials(confidential.Credentials)
+	count, err := s.CountActiveMultiFactorCredentials(ctx, confidential.Credentials)
 	if err != nil {
 		return false, err
 	}

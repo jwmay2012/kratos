@@ -25,6 +25,11 @@ export class ConfigBuilder {
     return this
   }
 
+  public disableCodeMfa() {
+    this.config.selfservice.methods.code.mfa_enabled = false
+    return this
+  }
+
   public enableRecovery() {
     if (!this.config.selfservice.flows.recovery) {
       this.config.selfservice.flows.recovery = {}
@@ -132,6 +137,13 @@ export class ConfigBuilder {
     this.config.session.whoami.required_aal = "aal1"
     return this
   }
+
+  public useHighestAvailable() {
+    this.config.selfservice.flows.settings.required_aal = "highest_available"
+    this.config.session.whoami.required_aal = "highest_available"
+    return this
+  }
+
   public enableCode() {
     this.config.selfservice.methods.code.enabled = true
     return this

@@ -316,14 +316,14 @@ func TestPool(ctx context.Context, p persistence.Persister, m *identity.Manager,
 
 		t.Run("case=create with null AAL", func(t *testing.T) {
 			expected := passwordIdentity("", "id-"+uuid.Must(uuid.NewV4()).String())
-			expected.AvailableAAL.Valid = false
+			expected.InternalAvailableAAL.Valid = false
 			require.NoError(t, p.CreateIdentity(ctx, expected))
 			createdIDs = append(createdIDs, expected.ID)
 
 			actual, err := p.GetIdentity(ctx, expected.ID, identity.ExpandDefault)
 			require.NoError(t, err)
 
-			assert.False(t, actual.AvailableAAL.Valid)
+			assert.False(t, actual.InternalAvailableAAL.Valid)
 		})
 
 		t.Run("suite=create multiple identities", func(t *testing.T) {
@@ -547,6 +547,22 @@ func TestPool(ctx context.Context, p persistence.Persister, m *identity.Manager,
 			err := p.UpdateIdentity(ctx, initial)
 			require.Error(t, err)
 			require.Contains(t, err.Error(), "malformed")
+		})
+
+		t.Run("case=update an identity column", func(t *testing.T) {
+			initial := oidcIdentity("", x.NewUUID().String())
+			initial.InternalAvailableAAL = identity.NewNullableAuthenticatorAssuranceLevel(identity.NoAuthenticatorAssuranceLevel)
+			require.NoError(t, p.CreateIdentity(ctx, initial))
+			createdIDs = append(createdIDs, initial.ID)
+
+			initial.InternalAvailableAAL = identity.NewNullableAuthenticatorAssuranceLevel(identity.AuthenticatorAssuranceLevel1)
+			initial.State = identity.StateInactive
+			require.NoError(t, p.UpdateIdentityColumns(ctx, initial, "available_aal"))
+
+			actual, err := p.GetIdentity(ctx, initial.ID, identity.ExpandDefault)
+			require.NoError(t, err)
+			assert.Equal(t, string(identity.AuthenticatorAssuranceLevel1), actual.InternalAvailableAAL.String)
+			assert.Equal(t, identity.StateActive, actual.State, "the state remains unchanged")
 		})
 
 		t.Run("case=should fail to insert identity because credentials from traits exist", func(t *testing.T) {
@@ -849,8 +865,12 @@ func TestPool(ctx context.Context, p persistence.Persister, m *identity.Manager,
 			// assert.EqualValues(t, expected.Credentials[CredentialsTypePassword].CreatedAt.Unix(), creds.CreatedAt.Unix())
 			// assert.EqualValues(t, expected.Credentials[CredentialsTypePassword].UpdatedAt.Unix(), creds.UpdatedAt.Unix())
 
-			expected.Credentials = nil
-			assertEqual(t, expected, actual)
+			require.Equal(t, expected.Traits, actual.Traits)
+			require.Equal(t, expected.ID, actual.ID)
+			require.NotNil(t, actual.Credentials[identity.CredentialsTypePassword])
+			assert.EqualValues(t, expected.Credentials[identity.CredentialsTypePassword].ID, actual.Credentials[identity.CredentialsTypePassword].ID)
+			assert.EqualValues(t, expected.Credentials[identity.CredentialsTypePassword].Identifiers, actual.Credentials[identity.CredentialsTypePassword].Identifiers)
+			assert.JSONEq(t, string(expected.Credentials[identity.CredentialsTypePassword].Config), string(actual.Credentials[identity.CredentialsTypePassword].Config))
 
 			t.Run("not if on another network", func(t *testing.T) {
 				_, p := testhelpers.NewNetwork(t, ctx, p)
@@ -1014,8 +1034,12 @@ func TestPool(ctx context.Context, p persistence.Persister, m *identity.Manager,
 			assert.EqualValues(t, []string{strings.ToLower(identifier)}, creds.Identifiers)
 			assert.JSONEq(t, string(expected.Credentials[identity.CredentialsTypePassword].Config), string(creds.Config))
 
-			expected.Credentials = nil
-			assertEqual(t, expected, actual)
+			require.Equal(t, expected.Traits, actual.Traits)
+			require.Equal(t, expected.ID, actual.ID)
+			require.NotNil(t, actual.Credentials[identity.CredentialsTypePassword])
+			assert.EqualValues(t, expected.Credentials[identity.CredentialsTypePassword].ID, actual.Credentials[identity.CredentialsTypePassword].ID)
+			assert.EqualValues(t, []string{strings.ToLower(identifier)}, actual.Credentials[identity.CredentialsTypePassword].Identifiers)
+			assert.JSONEq(t, string(expected.Credentials[identity.CredentialsTypePassword].Config), string(actual.Credentials[identity.CredentialsTypePassword].Config))
 
 			t.Run("not if on another network", func(t *testing.T) {
 				_, p := testhelpers.NewNetwork(t, ctx, p)
@@ -1338,7 +1362,7 @@ func TestPool(ctx context.Context, p persistence.Persister, m *identity.Manager,
 			i, c, err := p.FindByCredentialsIdentifier(ctx, m[0].Name, "nid1")
 			require.NoError(t, err)
 			assert.Equal(t, "nid1", c.Identifiers[0])
-			require.Len(t, i.Credentials, 0)
+			require.Len(t, i.Credentials, 1)
 
 			_, _, err = p.FindByCredentialsIdentifier(ctx, m[0].Name, "nid2")
 			require.ErrorIs(t, err, sqlcon.ErrNoRows)
