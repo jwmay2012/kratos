@@ -5,7 +5,7 @@
 
 **Table of Contents**
 
-- [ (2024-09-16)](#2024-09-16)
+- [ (2024-09-18)](#2024-09-18)
   - [Breaking Changes](#breaking-changes)
     - [Bug Fixes](#bug-fixes)
     - [Documentation](#documentation)
@@ -331,7 +331,7 @@
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
-# [](https://github.com/ory/kratos/compare/v1.2.0...v) (2024-09-16)
+# [](https://github.com/ory/kratos/compare/v1.2.0...v) (2024-09-18)
 
 ## Breaking Changes
 
@@ -394,6 +394,9 @@ body in the future.
 - Add PKCE config key to config schema
   ([#4098](https://github.com/ory/kratos/issues/4098))
   ([2c7ff3c](https://github.com/ory/kratos/commit/2c7ff3c8baab6aaa105e2d733a483fc07537470f))
+- Batch identity created event
+  ([#4111](https://github.com/ory/kratos/issues/4111))
+  ([340f698](https://github.com/ory/kratos/commit/340f698243bd908e217394710b475a7f686a8cf9))
 - Concurrent map update for webhook header
   ([#4055](https://github.com/ory/kratos/issues/4055))
   ([6ceb2f1](https://github.com/ory/kratos/commit/6ceb2f1213e1b28d3aa72380661e4aa985bfa437))
@@ -542,6 +545,15 @@ body in the future.
   This will allow you to delete individual OIDC credentials for users even if
   they have several set up.
 
+- Allow partially failing batch inserts
+  ([#4083](https://github.com/ory/kratos/issues/4083))
+  ([4ba7033](https://github.com/ory/kratos/commit/4ba70330cf9e0eda9044b0a5a504c34493ae17ed)):
+
+  When batch-inserting multiple identities, conflicts or validation errors of a
+  subset of identities in the batch still allow the rest of the identities to be
+  inserted. The returned JSON contains the error details that lead to the
+  failure.
+
 - Better detection if credentials exist on identifier first login
   ([#3963](https://github.com/ory/kratos/issues/3963))
   ([42ade94](https://github.com/ory/kratos/commit/42ade94e32a9a7ad6c0bda785e86d7209c46d8bb))
@@ -582,6 +594,9 @@ body in the future.
 
   - chore: fixup OIDC function signatures and improve tests
 
+- Emit events in identity persister
+  ([#4107](https://github.com/ory/kratos/issues/4107))
+  ([20156f6](https://github.com/ory/kratos/commit/20156f651f2faa0a79842de8d2fb4a09ee7094c1))
 - Identifier first auth
   ([1bdc19a](https://github.com/ory/kratos/commit/1bdc19ae3e1a3df38234cb892f65de4a2c95f041))
 - Identifier first login for all first factor login methods
