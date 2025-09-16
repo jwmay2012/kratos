@@ -9,8 +9,6 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
-
-	"github.com/ory/x/urlx"
 )
 
 type ProviderJackson struct {
@@ -49,9 +47,9 @@ func (j *ProviderJackson) OAuth2(ctx context.Context) (*oauth2.Config, error) {
 	j.setProvider(ctx)
 	endpoint := j.ProviderGenericOIDC.p.Endpoint()
 	config := j.oauth2ConfigFromEndpoint(ctx, endpoint)
-	config.RedirectURL = urlx.AppendPaths(
-		j.reg.Config().SAMLRedirectURIBase(ctx),
-		"/self-service/methods/saml/callback/"+j.config.ID).String()
+	// Jackson/Polis is a SAML-to-OIDC bridge, but Kratos treats it as OIDC
+	// so we use the standard OIDC callback URL
+	config.RedirectURL = j.config.Redir(j.reg.Config().OIDCRedirectURIBase(ctx))
 
 	return config, nil
 }

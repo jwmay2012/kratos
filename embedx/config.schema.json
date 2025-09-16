@@ -462,6 +462,7 @@
             "linkedin_v2",
             "lark",
             "x",
+            "jackson",
             "fedcm-test"
           ],
           "examples": ["google"]

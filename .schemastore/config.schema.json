@@ -456,7 +456,8 @@
             "linkedin",
             "linkedin_v2",
             "lark",
-            "x"
+            "x",
+            "jackson"
           ],
           "examples": ["google"]
         },
