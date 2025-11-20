@@ -17,6 +17,8 @@ import (
 )
 
 var _ Provider = new(ProviderGenericOIDC)
+var _ IDTokenVerifier = new(ProviderGenericOIDC)
+var _ NonceValidationSkipper = new(ProviderGenericOIDC)
 
 type ProviderGenericOIDC struct {
 	p      *gooidc.Provider
@@ -213,4 +215,23 @@ func (g *ProviderGenericOIDC) verifiedIDToken(ctx context.Context, exchange *oau
 	}
 
 	return token, nil
+}
+
+// Verify implements the IDTokenVerifier interface for generic OIDC providers.
+// It validates ID tokens submitted directly by mobile apps or other clients.
+// The provider automatically discovers JWKS endpoints via OIDC discovery and
+// validates the token signature, issuer, audience, and expiration.
+func (g *ProviderGenericOIDC) Verify(ctx context.Context, rawIDToken string) (*Claims, error) {
+	p, err := g.provider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return g.verifyAndDecodeClaimsWithProvider(ctx, p, rawIDToken)
+}
+
+// CanSkipNonce implements the NonceValidationSkipper interface.
+// It allows skipping nonce validation when the ID token doesn't contain a nonce claim.
+// This is useful for mobile SDKs that don't support nonce generation.
+func (g *ProviderGenericOIDC) CanSkipNonce(c *Claims) bool {
+	return c.Nonce == ""
 }
