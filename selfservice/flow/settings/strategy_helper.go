@@ -70,6 +70,7 @@ func PrepareUpdate(d interface {
 			return c, ErrContinuePreviousAction
 		}
 		d.Logger().
+			WithSpanFromContext(r.Context()).
 			WithField("package", pkgName).
 			WithField("stack_trace", string(debug.Stack())).
 			WithField("expected_request_id", payload.GetFlowID()).

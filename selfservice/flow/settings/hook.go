@@ -133,7 +133,7 @@ func (e *HookExecutor) handleSettingsError(_ http.ResponseWriter, r *http.Reques
 
 			cont, err := container.NewFromStruct("", group, i.Traits, "traits")
 			if err != nil {
-				e.d.Logger().WithError(err).Error("could not update flow UI")
+				e.d.Logger().WithSpanFromContext(r.Context()).WithError(err).Error("could not update flow UI")
 				return err
 			}
 
@@ -217,7 +217,7 @@ func (e *HookExecutor) PostSettingsHook(w http.ResponseWriter, r *http.Request, 
 
 	if err := e.d.IdentityManager().Update(r.Context(), i, options...); err != nil {
 		if errors.Is(err, identity.ErrProtectedFieldModified) {
-			e.d.Logger().WithError(err).Debug("Modifying protected field requires re-authentication.")
+			e.d.Logger().WithSpanFromContext(r.Context()).WithError(err).Debug("Modifying protected field requires re-authentication.")
 			return errors.WithStack(NewFlowNeedsReAuth())
 		}
 		if errors.Is(err, sqlcon.ErrUniqueViolation) {

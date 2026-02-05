@@ -205,7 +205,7 @@ preLoginHook:
 	if rawOrg := r.URL.Query().Get("organization"); rawOrg != "" {
 		orgIDFromURL, err := uuid.FromString(rawOrg)
 		if err != nil {
-			h.d.Logger().WithError(err).Warnf("Ignoring invalid UUID %q in query parameter `organization`.", rawOrg)
+			h.d.Logger().WithSpanFromContext(r.Context()).WithError(err).Warnf("Ignoring invalid UUID %q in query parameter `organization`.", rawOrg)
 		} else {
 			orgID = uuid.NullUUID{UUID: orgIDFromURL, Valid: true}
 		}

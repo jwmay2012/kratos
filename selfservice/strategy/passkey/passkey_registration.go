@@ -170,7 +170,7 @@ func (s *Strategy) Register(w http.ResponseWriter, r *http.Request, regFlow *reg
 	}, webAuthnSess, webAuthnResponse)
 	if err != nil {
 		if devErr := new(protocol.Error); errors.As(err, &devErr) {
-			s.d.Logger().WithError(err).WithField("error_devinfo", devErr.DevInfo).Error("Failed to create WebAuthn credential")
+			s.d.Logger().WithSpanFromContext(r.Context()).WithError(err).WithField("error_devinfo", devErr.DevInfo).Error("Failed to create WebAuthn credential")
 		}
 		return s.handleRegistrationError(w, r, regFlow, params, errors.WithStack(
 			herodot.ErrInternalServerError.WithReasonf("Unable to create WebAuthn credential: %s", err)))
