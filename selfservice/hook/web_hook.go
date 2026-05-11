@@ -447,6 +447,7 @@ var RequestHeaderAllowList = map[string]struct{}{
 	"Sec-Fetch-User":     {},
 	"True-Client-Ip":     {},
 	"User-Agent":         {},
+	"X-Acres-Client":     {},
 }
 
 func removeDisallowedHeaders(data *templateContext) {
