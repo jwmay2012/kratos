@@ -194,7 +194,7 @@ func HandleHookError(_ http.ResponseWriter, r *http.Request, f Flow, traits iden
 		if traits != nil {
 			cont, err := container.NewFromStruct("", group, traits, "traits")
 			if err != nil {
-				logger.Logger().WithError(err).Error("could not update flow UI")
+				logger.Logger().WithSpanFromContext(r.Context()).WithError(err).Error("could not update flow UI")
 				return err
 			}
 

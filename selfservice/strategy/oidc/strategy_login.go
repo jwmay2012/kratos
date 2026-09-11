@@ -183,6 +183,7 @@ func (s *Strategy) ProcessLogin(ctx context.Context, w http.ResponseWriter, r *h
 				// This is kinda hacky but the only way to ensure seamless login/registration flows when using OIDC.
 				s.d.
 					Logger().
+					WithSpanFromContext(ctx).
 					WithField("provider", provider.Config().ID).
 					WithField("subject", claims.Subject).
 					Debug("Received successful OpenID Connect callback but user is not registered. Re-initializing registration flow now.")
