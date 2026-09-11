@@ -1080,17 +1080,19 @@ func TestStrategy(t *testing.T) {
 				},
 			},
 			{
-				name: "should fail if no nonce is included in the id_token",
+				name: "legacy native compatibility accepts an absent token nonce",
 				idToken: `{
 					"iss": "https://appleid.apple.com",
 					"sub": "{{sub}}"
 				}`,
 				expect: func(t *testing.T, res *http.Response, body []byte) {
-					require.Equal(t, "No nonce was included in the id_token but is required by the provider", gjson.GetBytes(body, "error.reason").String(), "%s", body)
+					require.Equal(t, http.StatusOK, res.StatusCode, "%s", body)
+					require.NotEmpty(t, gjson.GetBytes(body, "session_token").String())
+					require.True(t, gjson.GetBytes(body, "session.active").Bool())
 				},
 			},
 			{
-				name: "should fail if no nonce is supplied in request",
+				name: "legacy native compatibility accepts an absent submitted nonce",
 				idToken: `{
 					"iss": "https://appleid.apple.com",
 					"sub": "{{sub}}",
@@ -1103,7 +1105,9 @@ func TestStrategy(t *testing.T) {
 					}
 				},
 				expect: func(t *testing.T, res *http.Response, body []byte) {
-					require.Equal(t, "No nonce was provided but is required by the provider", gjson.GetBytes(body, "error.reason").String(), "%s", body)
+					require.Equal(t, http.StatusOK, res.StatusCode, "%s", body)
+					require.NotEmpty(t, gjson.GetBytes(body, "session_token").String())
+					require.True(t, gjson.GetBytes(body, "session.active").Bool())
 				},
 			},
 			{
@@ -1118,14 +1122,16 @@ func TestStrategy(t *testing.T) {
 				},
 			},
 			{
-				name: "nonce mismatch",
+				name: "legacy native compatibility accepts different nonces",
 				idToken: `{
 					"iss": "https://appleid.apple.com",
 					"sub": "{{sub}}",
 					"nonce": "random-nonce"
 				}`,
 				expect: func(t *testing.T, res *http.Response, body []byte) {
-					require.Equal(t, "The supplied nonce does not match the nonce from the id_token", gjson.GetBytes(body, "error.reason").String(), "%s", body)
+					require.Equal(t, http.StatusOK, res.StatusCode, "%s", body)
+					require.NotEmpty(t, gjson.GetBytes(body, "session_token").String())
+					require.True(t, gjson.GetBytes(body, "session.active").Bool())
 				},
 			},
 		} {
