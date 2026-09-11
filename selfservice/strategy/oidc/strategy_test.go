@@ -1023,6 +1023,10 @@ func TestStrategy(t *testing.T) {
 			conf,
 			newOIDCProvider(t, ts, remotePublic, remoteAdmin, "valid"),
 			oidc.Configuration{
+				Provider: "github", ID: "unsupported-native", ClientID: "fixture-client",
+				Mapper: "file://./stub/oidc.facebook.jsonnet",
+			},
+			oidc.Configuration{
 				Provider:     "test-provider",
 				ID:           "test-provider",
 				ClientID:     invalid.ClientID,
@@ -1059,9 +1063,15 @@ func TestStrategy(t *testing.T) {
 			{
 				name:     "should fail if provider does not support id_token submission",
 				idToken:  "error",
-				provider: "valid",
+				provider: "unsupported-native",
 				expect: func(t *testing.T, res *http.Response, body []byte) {
-					require.Equal(t, "The provider generic does not support id_token verification", gjson.GetBytes(body, "error.reason").String(), "%s", body)
+					require.Equal(t, "The provider github does not support id_token verification", gjson.GetBytes(body, "error.reason").String(), "%s", body)
+				},
+			},
+			{
+				name: "generic verifier rejects a malformed id_token", idToken: "error", provider: "valid",
+				expect: func(t *testing.T, res *http.Response, body []byte) {
+					require.Equal(t, "Could not verify id_token", gjson.GetBytes(body, "error.reason").String(), "%s", body)
 				},
 			},
 			{

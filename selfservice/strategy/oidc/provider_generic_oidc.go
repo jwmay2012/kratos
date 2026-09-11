@@ -18,6 +18,8 @@ import (
 )
 
 var _ OAuth2Provider = (*ProviderGenericOIDC)(nil)
+var _ IDTokenVerifier = (*ProviderGenericOIDC)(nil)
+var _ NonceValidationSkipper = (*ProviderGenericOIDC)(nil)
 
 type ProviderGenericOIDC struct {
 	p      *gooidc.Provider
@@ -216,4 +218,17 @@ func (g *ProviderGenericOIDC) verifiedIDToken(ctx context.Context, exchange *oau
 	}
 
 	return token, nil
+}
+
+// Verify validates directly submitted ID tokens using OIDC discovery.
+func (g *ProviderGenericOIDC) Verify(ctx context.Context, rawIDToken string) (*Claims, error) {
+	p, err := g.provider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return g.verifyAndDecodeClaimsWithProvider(ctx, p, rawIDToken)
+}
+
+func (g *ProviderGenericOIDC) CanSkipNonce(c *Claims) bool {
+	return c.Nonce == ""
 }
