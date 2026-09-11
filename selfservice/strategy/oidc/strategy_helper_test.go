@@ -28,6 +28,7 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	mobyclient "github.com/moby/moby/client"
 
 	dockertest "github.com/ory/dockertest/v4"
 	"github.com/ory/kratos/driver"
@@ -270,11 +271,24 @@ func newHydra(t *testing.T, subject *string, claims *idTokenClaims, scope *[]str
 			}
 		}),
 	)
-	require.NotEmpty(t, hydra.GetPort("4444/tcp"), "%+v", hydra.Container().NetworkSettings.Ports)
-	require.NotEmpty(t, hydra.GetPort("4445/tcp"), "%+v", hydra.Container)
+	// Docker may initially expose the port-map keys before their host bindings.
+	// Refresh the inspection until both ports are usable; do not retry auth flows.
+	var publicBinding, adminBinding string
+	require.NoError(t, pool.Retry(t.Context(), 5*time.Second, func() error {
+		inspected, err := pool.Client().ContainerInspect(t.Context(), hydra.ID(), mobyclient.ContainerInspectOptions{})
+		if err != nil {
+			return err
+		}
+		ports := dockertest.NewResource(inspected.Container)
+		publicBinding, adminBinding = ports.GetPort("4444/tcp"), ports.GetPort("4445/tcp")
+		if publicBinding == "" || adminBinding == "" {
+			return errors.New("Hydra host port bindings are not ready")
+		}
+		return nil
+	}))
 
-	remotePublic = "http://localhost:" + hydra.GetPort("4444/tcp")
-	remoteAdmin = "http://localhost:" + hydra.GetPort("4445/tcp")
+	remotePublic = "http://localhost:" + publicBinding
+	remoteAdmin = "http://localhost:" + adminBinding
 
 	err = resilience.Retry(logrusx.New("", ""), time.Second*1, time.Second*30, func() error {
 		pr := remotePublic + "/health/ready"
