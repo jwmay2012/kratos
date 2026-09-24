@@ -14,6 +14,7 @@ Historical branches and published tags are retained unchanged.
 | Request log context | Retain trace/span context on existing flow logs | Hook-error logs with and without a request span |
 | Registration hook session | Keep the issued session in the post-registration template context | Existing HTTP/Jsonnet webhook matrix |
 | Hydra fixture readiness | Wait for both Docker port bindings before testing authentication | The complete OIDC strategy/settings test suites |
+| Configuration validation logging | Report invalid field paths and causes without echoing secret-bearing config values | Startup/reload credential non-disclosure and last-good configuration |
 
 The old custom request-header allowlist patch is unnecessary: upstream now
 supports `clients.web_hook.header_allowlist`. Configure the required headers in
@@ -39,6 +40,9 @@ sh test/fork.sh
 It fails if a required native-token regression disappears, verifies the native
 provider contracts, and runs the flow, hook, and session packages. It does not
 claim to replace upstream's Docker-backed strategy or database matrix.
+The gate also requires the configuration-log regression: malformed provider
+settings must retain useful field paths without exposing credentials, and an
+invalid reload must leave the previous working configuration active.
 
 For broader release acceptance with Docker available:
 

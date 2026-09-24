@@ -378,7 +378,8 @@ func New(ctx context.Context, l *logrusx.Logger, stdOutOrErr io.Writer, ctxer co
 	var c *Config
 
 	opts = append([]configx.OptionModifier{
-		configx.WithStderrValidationReporter(),
+		// The human-readable reporter echoes config values, including credentials.
+		// Keep validation errors and watcher logs without printing the input.
 		configx.OmitKeysFromTracing("dsn", "courier.smtp.connection_uri", "secrets.default", "secrets.cookie", "secrets.cipher", "client_secret"),
 		configx.WithImmutables("serve", "profiling", "log"),
 		configx.WithExceptImmutables("serve.public.cors.allowed_origins"),

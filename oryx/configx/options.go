@@ -124,7 +124,7 @@ func LogrusWatcher(l *logrusx.Logger) func(e watcherx.Event, err error) {
 			Info("A change to a configuration file was detected.")
 
 		if et := new(jsonschema.ValidationError); errors.As(err, &et) {
-			l.WithField("event", fmt.Sprintf("%#v", et)).
+			l.WithError(err).
 				Errorf("The changed configuration is invalid and could not be loaded. Rolling back to the last working configuration revision. Please address the validation errors before restarting the process.")
 		} else if et := new(ImmutableError); errors.As(err, &et) {
 			l.WithError(err).

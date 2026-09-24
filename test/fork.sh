@@ -15,3 +15,7 @@ done
 
 go test -p 2 -parallel 1 -tags sqlite -count=1 ./selfservice/strategy/oidc -run "$oidc_tests" -timeout 5m
 go test -p 2 -parallel 1 -tags sqlite -count=1 ./selfservice/flow ./selfservice/hook ./session -timeout 10m
+config_test=TestOIDCConfigValidationDoesNotLeakSecrets
+listed=$(go test -tags sqlite ./driver/config -list "^$config_test$")
+printf '%s\n' "$listed" | grep -Fxq "$config_test" || { printf 'Required config regression is missing: %s\n' "$config_test" >&2; exit 1; }
+go test -p 2 -tags sqlite -count=1 ./driver/config -run "^$config_test$" -timeout 1m
