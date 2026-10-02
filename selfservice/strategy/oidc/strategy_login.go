@@ -99,7 +99,7 @@ type UpdateLoginFlowWithOidcMethod struct {
 }
 
 func (s *Strategy) handleConflictingIdentity(ctx context.Context, loginFlow *login.Flow, token *identity.CredentialsOIDCEncryptedTokens, claims *Claims, provider Provider, container *AuthCodeContainer) (verdict ConflictingIdentityVerdict, id *identity.Identity, credentials *identity.Credentials, err error) {
-	if s.conflictingIdentityPolicy == nil {
+	if s.conflictingIdentityPolicy == nil && provider.Config().AccountLinkingMode != AccountLinkingModeAutomatic {
 		return ConflictingIdentityVerdictReject, nil, nil, nil
 	}
 
@@ -138,6 +138,9 @@ func (s *Strategy) handleConflictingIdentity(ctx context.Context, loginFlow *log
 	}
 
 	newIdentity.SetCredentials(s.ID(), *creds)
+	if s.conflictingIdentityPolicy == nil {
+		return s.prepareVerifiedLink(ctx, loginFlow, newIdentity, claims, provider, creds)
+	}
 
 	existingIdentity, _, _, err := s.d.IdentityManager().ConflictingIdentity(ctx, newIdentity)
 	if err != nil {
@@ -248,6 +251,7 @@ func (s *Strategy) ProcessLogin(ctx context.Context, w http.ResponseWriter, r *h
 
 	for _, c := range oidcCredentials.Providers {
 		if c.Subject == claims.Subject && c.Provider == provider.Config().ID {
+			s.recordVerifiedEmail(ctx, i, claims, provider)
 			if err = s.d.LoginHookExecutor().PostLoginHook(w, r, node.OpenIDConnectGroup, loginFlow, i, sess, provider.Config().ID); err != nil {
 				return nil, x.WrapWithIdentityIDError(s.HandleError(ctx, w, r, loginFlow, provider.Config().ID, nil, err), i.ID)
 			}

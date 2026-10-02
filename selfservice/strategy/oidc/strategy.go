@@ -87,6 +87,7 @@ type Dependencies interface {
 	identity.PrivilegedPoolProvider
 	identity.ActiveCredentialsCounterStrategyProvider
 	identity.ManagementProvider
+	x.TransactionPersistenceProvider
 
 	session.ManagementProvider
 	session.HandlerProvider
