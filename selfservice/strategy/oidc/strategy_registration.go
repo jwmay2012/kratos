@@ -322,6 +322,9 @@ func (s *Strategy) registrationToLogin(ctx context.Context, w http.ResponseWrite
 func (s *Strategy) processRegistration(ctx context.Context, w http.ResponseWriter, r *http.Request, rf *registration.Flow, token *identity.CredentialsOIDCEncryptedTokens, claims *Claims, provider Provider, container *AuthCodeContainer) (_ *login.Flow, err error) {
 	ctx, span := s.d.Tracer(ctx).Tracer().Start(ctx, "selfservice.strategy.oidc.Strategy.processRegistration")
 	defer otelx.End(span, &err)
+	if err := s.rememberVerifiedEmail(rf, claims, provider); err != nil {
+		return nil, err
+	}
 
 	if _, _, err := s.d.PrivilegedIdentityPool().FindByCredentialsIdentifier(ctx, s.ID(), identity.OIDCUniqueID(provider.Config().ID, claims.Subject)); err == nil {
 		// If the identity already exists, we should perform the login flow instead.
@@ -377,6 +380,20 @@ func (s *Strategy) processRegistration(ctx context.Context, w http.ResponseWrite
 	}
 
 	i.SetCredentials(s.ID(), *creds)
+	if s.conflictingIdentityPolicy == nil && provider.Config().AccountLinkingMode == AccountLinkingModeAutomatic {
+		existing, err := s.automaticLinkTarget(ctx, i, claims, provider, rf.OrganizationID, rf.Type)
+		if err != nil {
+			return nil, errors.Wrap(err, "find identity for verified-email linking")
+		}
+		if existing != nil {
+			lf, err := s.registrationToLogin(ctx, w, r, rf)
+			if err != nil {
+				return nil, errors.Wrap(err, "create login flow for verified-email linking")
+			}
+			_, err = s.ProcessLogin(ctx, w, r, lf, token, claims, provider, container)
+			return lf, err
+		}
+	}
 	if err := s.d.RegistrationExecutor().PostRegistrationHook(w, r, s.ID(), provider.Config().ID, provider.Config().OrganizationID, rf, i); err != nil {
 		return nil, s.HandleError(ctx, w, r, rf, provider.Config().ID, i.Traits, err)
 	}

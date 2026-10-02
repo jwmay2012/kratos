@@ -460,5 +460,11 @@ func (e *HookExecutor) checkDuplicateCredentialsIdentifierMatch(ctx context.Cont
 			}
 		}
 	}
+	// An OIDC-only identity may have an email address but no email-shaped credential identifier.
+	for _, address := range i.VerifiableAddresses {
+		if address.Via == identity.AddressTypeEmail && address.Verified && address.Value == match {
+			return nil
+		}
+	}
 	return schema.NewLinkedCredentialsDoNotMatch()
 }
