@@ -313,6 +313,7 @@ jobs:
             test/e2e/playwright-report/
 
   docs-cli:
+    if: ${{ github.repository == 'ory/kratos' }}
     runs-on: ubuntu-latest
     name: Build CLI docs
     needs:
@@ -327,7 +328,7 @@ jobs:
   release:
     name: Generate release
     runs-on: ubuntu-latest
-    if: ${{ github.ref_type == 'tag' }}
+    if: ${{ github.repository == 'ory/kratos' && github.ref_type == 'tag' }}
     needs:
       - test
       - test-e2e
