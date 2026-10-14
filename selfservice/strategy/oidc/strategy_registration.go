@@ -377,7 +377,11 @@ func (s *Strategy) processRegistration(ctx context.Context, w http.ResponseWrite
 	}
 
 	i.SetCredentials(s.ID(), *creds)
-	if err := s.d.RegistrationExecutor().PostRegistrationHook(w, r, s.ID(), provider.Config().ID, provider.Config().OrganizationID, rf, i); err != nil {
+	hookContext, err := flow.WithUpstreamClaims(r.Context(), s.ID().String(), provider.Config().ID, claims)
+	if err != nil {
+		return nil, s.HandleError(ctx, w, r, rf, provider.Config().ID, i.Traits, err)
+	}
+	if err := s.d.RegistrationExecutor().PostRegistrationHook(w, r.WithContext(hookContext), s.ID(), provider.Config().ID, provider.Config().OrganizationID, rf, i); err != nil {
 		return nil, s.HandleError(ctx, w, r, rf, provider.Config().ID, i.Traits, err)
 	}
 

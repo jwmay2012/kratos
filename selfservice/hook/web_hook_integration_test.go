@@ -211,6 +211,37 @@ func TestWebHooks(t *testing.T) {
 		return body
 	}
 
+	t.Run("verified upstream claims are a Jsonnet object and absent on fresh requests", func(t *testing.T) {
+		for _, registrationHook := range []bool{false, true} {
+			for _, attach := range []bool{false, true} {
+				whr := new(WebHookRequest)
+				ts := httptest.NewServer(webHookEndPoint(whr))
+				t.Cleanup(ts.Close)
+				wh := hook.NewWebHook(&whDeps, &request.Config{
+					URL: ts.URL, Method: http.MethodPost,
+					TemplateURI: "base64://" + base64.StdEncoding.EncodeToString([]byte(`function(ctx) if std.objectHas(ctx, "upstream_claims") then ctx.upstream_claims else {}`)),
+				})
+				req := httptest.NewRequest(http.MethodGet, "https://example.test/callback", nil)
+				if attach {
+					ctx, err := flow.WithUpstreamClaims(req.Context(), "oidc", "example", json.RawMessage(`{"sub":"verified-subject","raw_claims":{"team":"north"}}`))
+					require.NoError(t, err)
+					req = req.WithContext(ctx)
+				}
+				sess := &session.Session{Identity: &identity.Identity{ID: x.NewUUID()}}
+				if registrationHook {
+					require.NoError(t, wh.ExecutePostRegistrationPostPersistHook(nil, req, &registration.Flow{ID: x.NewUUID()}, sess))
+				} else {
+					require.NoError(t, wh.ExecuteLoginPostHook(nil, req, node.OpenIDConnectGroup, &login.Flow{ID: x.NewUUID()}, sess))
+				}
+				if attach {
+					assert.JSONEq(t, `{"method":"oidc","provider":"example","claims":{"sub":"verified-subject","raw_claims":{"team":"north"}}}`, whr.Body)
+				} else {
+					assert.JSONEq(t, `{}`, whr.Body)
+				}
+			}
+		}
+	})
+
 	for _, tc := range []struct {
 		uc           string
 		callWebHook  func(wh *hook.WebHook, req *http.Request, f flow.Flow, s *session.Session) error

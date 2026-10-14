@@ -88,6 +88,8 @@ type (
 		RequestCookies map[string]string  `json:"request_cookies"`
 		Identity       *identity.Identity `json:"identity,omitempty"`
 		Session        *session.Session   `json:"session,omitempty"`
+
+		UpstreamClaims *flow.UpstreamClaims `json:"upstream_claims,omitempty"`
 	}
 
 	WebHook struct {
@@ -301,6 +303,7 @@ func (e *WebHook) ExecuteSettingsPrePersistHook(_ http.ResponseWriter, req *http
 }
 
 func (e *WebHook) execute(ctx context.Context, data *templateContext) error {
+	data.UpstreamClaims = flow.UpstreamClaimsFromContext(ctx)
 	var (
 		httpClient     = e.deps.HTTPClient(ctx)
 		ignoreResponse = e.conf.Response.Ignore
