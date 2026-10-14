@@ -248,7 +248,11 @@ func (s *Strategy) ProcessLogin(ctx context.Context, w http.ResponseWriter, r *h
 
 	for _, c := range oidcCredentials.Providers {
 		if c.Subject == claims.Subject && c.Provider == provider.Config().ID {
-			if err = s.d.LoginHookExecutor().PostLoginHook(w, r, node.OpenIDConnectGroup, loginFlow, i, sess, provider.Config().ID); err != nil {
+			hookContext, err := flow.WithUpstreamClaims(r.Context(), s.ID().String(), provider.Config().ID, claims)
+			if err != nil {
+				return nil, s.HandleError(ctx, w, r, loginFlow, provider.Config().ID, nil, err)
+			}
+			if err = s.d.LoginHookExecutor().PostLoginHook(w, r.WithContext(hookContext), node.OpenIDConnectGroup, loginFlow, i, sess, provider.Config().ID); err != nil {
 				return nil, x.WrapWithIdentityIDError(s.HandleError(ctx, w, r, loginFlow, provider.Config().ID, nil, err), i.ID)
 			}
 			return nil, nil

@@ -453,6 +453,9 @@ func TestStrategy(t *testing.T) {
 			assertIdentity(t, res, body)
 			expectTokens(t, "valid", body)
 			postRegistrationWebhook.AssertTransientPayload(t, transientPayload)
+			assert.Equal(t, "valid", gjson.GetBytes(postRegistrationWebhook.LastBody, "upstream_claims.provider").String())
+			assert.Equal(t, "oidc", gjson.GetBytes(postRegistrationWebhook.LastBody, "upstream_claims.method").String())
+			assert.Equal(t, subject, gjson.GetBytes(postRegistrationWebhook.LastBody, "upstream_claims.claims.sub").String())
 		})
 
 		t.Run("case=try another registration", func(t *testing.T) {
@@ -470,6 +473,22 @@ func TestStrategy(t *testing.T) {
 			expectTokens(t, "valid", body)
 
 			postLoginWebhook.AssertTransientPayload(t, transientPayload)
+			assert.Equal(t, "valid", gjson.GetBytes(postLoginWebhook.LastBody, "upstream_claims.provider").String())
+			assert.Equal(t, "oidc", gjson.GetBytes(postLoginWebhook.LastBody, "upstream_claims.method").String())
+			assert.Equal(t, subject, gjson.GetBytes(postLoginWebhook.LastBody, "upstream_claims.claims.sub").String())
+		})
+
+		t.Run("case=login flow registers with verified hook claims", func(t *testing.T) {
+			subject = "oidc-login-to-registration@ory.sh"
+			postRegistrationWebhook := hooktest.NewServer()
+			t.Cleanup(postRegistrationWebhook.Close)
+			postRegistrationWebhook.SetConfig(t, conf.GetProvider(ctx), config.HookStrategyKey(config.ViperKeySelfServiceRegistrationAfter, identity.CredentialsTypeOIDC.String()))
+			f := newBrowserLoginFlow(t, returnTS.URL, time.Minute)
+			action := assertFormValues(t, f.ID, "valid")
+			res, body := makeRequest(t, "valid", action, url.Values{})
+			assertIdentity(t, res, body)
+			assert.Equal(t, "valid", gjson.GetBytes(postRegistrationWebhook.LastBody, "upstream_claims.provider").String())
+			assert.Equal(t, subject, gjson.GetBytes(postRegistrationWebhook.LastBody, "upstream_claims.claims.sub").String())
 		})
 	})
 
@@ -1147,6 +1166,9 @@ func TestStrategy(t *testing.T) {
 		} {
 			tc := tc
 			t.Run(fmt.Sprintf("flow=registration/case=%s", tc.name), func(t *testing.T) {
+				postRegistrationWebhook := hooktest.NewServer()
+				t.Cleanup(postRegistrationWebhook.Close)
+				postRegistrationWebhook.SetConfig(t, conf.GetProvider(ctx), config.HookStrategyKey(config.ViperKeySelfServiceRegistrationAfter, identity.CredentialsTypeOIDC.String()))
 				f := newAPIRegistrationFlow(t, returnTS.URL, time.Minute)
 				provider, token, nonce := prep(&tc)
 				action := assertFormValues(t, f.ID, "test-provider")
@@ -1162,9 +1184,17 @@ func TestStrategy(t *testing.T) {
 				require.NoError(t, err)
 				body := ioutilx.MustReadAll(res.Body)
 				tc.expect(t, res, body)
+				if gjson.GetBytes(body, "session_token").String() != "" {
+					assert.Equal(t, provider, gjson.GetBytes(postRegistrationWebhook.LastBody, "upstream_claims.provider").String())
+					assert.Equal(t, "oidc", gjson.GetBytes(postRegistrationWebhook.LastBody, "upstream_claims.method").String())
+					assert.NotEmpty(t, gjson.GetBytes(postRegistrationWebhook.LastBody, "upstream_claims.claims.sub").String())
+				}
 			})
 
 			t.Run(fmt.Sprintf("flow=login/case=%s", tc.name), func(t *testing.T) {
+				postLoginWebhook := hooktest.NewServer()
+				t.Cleanup(postLoginWebhook.Close)
+				postLoginWebhook.SetConfig(t, conf.GetProvider(ctx), config.HookStrategyKey(config.ViperKeySelfServiceLoginAfter, config.HookGlobal))
 				provider, token, nonce := prep(&tc)
 				rf := newAPIRegistrationFlow(t, returnTS.URL, time.Minute)
 				action := assertFormValues(t, rf.ID, "test-provider")
@@ -1186,6 +1216,11 @@ func TestStrategy(t *testing.T) {
 				require.NoError(t, err)
 				body := ioutilx.MustReadAll(res.Body)
 				tc.expect(t, res, body)
+				if gjson.GetBytes(body, "session_token").String() != "" {
+					assert.Equal(t, provider, gjson.GetBytes(postLoginWebhook.LastBody, "upstream_claims.provider").String())
+					assert.Equal(t, "oidc", gjson.GetBytes(postLoginWebhook.LastBody, "upstream_claims.method").String())
+					assert.NotEmpty(t, gjson.GetBytes(postLoginWebhook.LastBody, "upstream_claims.claims.sub").String())
+				}
 			})
 
 			t.Run(fmt.Sprintf("flow=login_without_registration/case=%s", tc.name), func(t *testing.T) {

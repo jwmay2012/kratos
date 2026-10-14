@@ -14,6 +14,20 @@ Historical branches and published tags are retained unchanged.
 | Request log context | Retain trace/span context on existing flow logs | Hook-error logs with and without a request span |
 | Registration hook session | Keep the issued session in the post-registration template context | Existing HTTP/Jsonnet webhook matrix |
 | Hydra fixture readiness | Wait for both Docker port bindings before testing authentication | The complete OIDC strategy/settings test suites |
+| Verified upstream hook context | Expose request-scoped verified OIDC provider/claims to existing webhook templates | Carrier snapshot, Jsonnet object/absence, browser/native and conversion cases |
+
+The optional `upstream_claims` template field contains the actual strategy method,
+provider ID and its verified claims, including `raw_claims`; it is not caller traits or
+transient payload. It is attached only at OIDC login/registration post-hook calls,
+snapshotted in request context and never added to persisted flow/session/identity
+metadata. Existing templates stay unchanged. Later password-link and settings
+requests have no inherited context. Templates must select what their receiver
+needs; receiver authorization, payload limits and safe logging remain deployment
+responsibilities. No provider-specific policy, tokens, migration or hint change
+is introduced.
+Native direct-token login reaches its hook before the existing strategy assigns
+`flow.active`, so consumers use the verified context's method rather than infer it
+from that optional flow field. The existing flow/hook-selection behavior is unchanged.
 
 The old custom request-header allowlist patch is unnecessary: upstream now
 supports `clients.web_hook.header_allowlist`. Configure the required headers in
