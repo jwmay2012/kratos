@@ -4,6 +4,11 @@ This fork follows released upstream Kratos tags, not upstream master. The curren
 series is based on `v26.2.0` (`9d7085948039ffb8960160d4979f71527b5cf4d5`).
 Historical branches and published tags are retained unchanged.
 
+GitHub Actions are disabled for this fork. Release verification runs through
+native Linux image builds and the existing fork regression gate; the inherited
+tag-triggered workflows are retained as upstream reference. Do not weaken the
+JSONnet sandbox to accommodate an emulated build host.
+
 ## Patches
 
 The October 21 trust-store rebuild pins Go 1.26.10 and the existing distroless
