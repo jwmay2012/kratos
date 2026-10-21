@@ -6,6 +6,13 @@ Historical branches and published tags are retained unchanged.
 
 ## Patches
 
+The October 21 trust-store rebuild pins Go 1.26.10 and the existing distroless
+Debian 12 runtime by digest. It copies the builder's updated CA bundle into the
+runtime, removing the affected roots independently of Go's eMudhra intermediate
+blocklist. Application code and dependencies are unchanged by this packaging
+commit. Keep it separate when rebasing and remove it when upstream provides
+equivalent build inputs and trust-store handling.
+
 | Patch | Purpose | Regression coverage |
 | --- | --- | --- |
 | Native nonce compatibility | Preserve the historical direct-ID-token nonce behavior | Direct verifier checks and the upstream login/registration matrix |
