@@ -534,32 +534,14 @@ func (s *Strategy) Link(ctx context.Context, i *identity.Identity, credentialsCo
 	ctx, span := s.d.Tracer(ctx).Tracer().Start(ctx, "selfservice.strategy.oidc.Strategy.Link")
 	defer otelx.End(span, &err)
 
-	var credentialsOIDCConfig identity.CredentialsOIDC
+	var credentialsOIDCConfig emailLinkCredentials
 	if err := json.Unmarshal(credentialsConfig, &credentialsOIDCConfig); err != nil {
-		return err
+		return errors.Wrap(err, "decode pending OIDC credentials")
 	}
 	if len(credentialsOIDCConfig.Providers) != 1 {
 		return errors.New("no oidc provider was set")
 	}
-	credentialsOIDCProvider := credentialsOIDCConfig.Providers[0]
-
-	if err := s.linkCredentials(
-		ctx,
-		i,
-		// The tokens in this credential are coming from the existing identity. Hence, the values are already encrypted.
-		credentialsOIDCProvider.GetTokens(),
-		credentialsOIDCProvider.Provider,
-		credentialsOIDCProvider.Subject,
-		credentialsOIDCProvider.Organization,
-	); err != nil {
-		return err
-	}
-
-	if err := s.d.IdentityManager().Update(ctx, i, identity.ManagerAllowWriteProtectedTraits); err != nil {
-		return err
-	}
-
-	return nil
+	return errors.WithStack(x.WrapWithIdentityIDError(s.persistLinkedCredentials(ctx, i, credentialsOIDCConfig), i.ID))
 }
 
 func (s *Strategy) CompletedLogin(sess *session.Session, data *flow.DuplicateCredentialsData) error {
@@ -592,7 +574,7 @@ func (s *Strategy) SetDuplicateCredentials(f flow.InternalContexter, duplicateId
 	for _, p := range credentialsOIDCConfig.Providers {
 		if p.Provider == provider {
 			credentialsOIDCConfig.Providers = []identity.CredentialsOIDCProvider{p}
-			config, err := json.Marshal(credentialsOIDCConfig)
+			config, err := linkConfig(f, credentialsOIDCConfig)
 			if err != nil {
 				return err
 			}

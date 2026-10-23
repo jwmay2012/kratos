@@ -146,7 +146,7 @@ type Configuration struct {
 	PKCE string `json:"pkce"`
 
 	// FedCMConfigURL is the URL to the FedCM IdP configuration file.
-	// This is only effective in the Ory Network.
+	// This fork supports automatic linking to active identities with a matching verified email address.
 	FedCMConfigURL string `json:"fedcm_config_url"`
 
 	// NetIDTokenOriginHeader contains the orgin header to be used when exchanging a
