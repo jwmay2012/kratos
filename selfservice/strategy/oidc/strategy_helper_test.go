@@ -43,7 +43,9 @@ import (
 )
 
 type idTokenClaims struct {
-	traits struct {
+	email         string
+	emailVerified *bool
+	traits        struct {
 		website string
 		groups  []string
 	}
@@ -58,22 +60,28 @@ type idTokenClaims struct {
 func (token *idTokenClaims) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		IDToken struct {
-			Website     string   `json:"website,omitempty"`
-			Groups      []string `json:"groups,omitempty"`
-			Picture     string   `json:"picture,omitempty"`
-			PhoneNumber string   `json:"phone_number,omitempty"`
+			Email         string   `json:"email,omitempty"`
+			EmailVerified *bool    `json:"email_verified,omitempty"`
+			Website       string   `json:"website,omitempty"`
+			Groups        []string `json:"groups,omitempty"`
+			Picture       string   `json:"picture,omitempty"`
+			PhoneNumber   string   `json:"phone_number,omitempty"`
 		} `json:"id_token"`
 	}{
 		IDToken: struct {
-			Website     string   `json:"website,omitempty"`
-			Groups      []string `json:"groups,omitempty"`
-			Picture     string   `json:"picture,omitempty"`
-			PhoneNumber string   `json:"phone_number,omitempty"`
+			Email         string   `json:"email,omitempty"`
+			EmailVerified *bool    `json:"email_verified,omitempty"`
+			Website       string   `json:"website,omitempty"`
+			Groups        []string `json:"groups,omitempty"`
+			Picture       string   `json:"picture,omitempty"`
+			PhoneNumber   string   `json:"phone_number,omitempty"`
 		}{
-			Website:     token.traits.website,
-			Groups:      token.traits.groups,
-			Picture:     token.metadataPublic.picture,
-			PhoneNumber: token.metadataAdmin.phoneNumber,
+			Email:         token.email,
+			EmailVerified: token.emailVerified,
+			Website:       token.traits.website,
+			Groups:        token.traits.groups,
+			Picture:       token.metadataPublic.picture,
+			PhoneNumber:   token.metadataAdmin.phoneNumber,
 		},
 	})
 }

@@ -413,25 +413,32 @@ func (s *Strategy) linkProvider(ctx context.Context, w http.ResponseWriter, r *h
 		return s.handleSettingsError(ctx, w, r, ctxUpdate, p, err)
 	}
 
+	email := trustedEmail(claims, provider.Config())
+	if err := validateLinkEmail(i, email); err != nil {
+		return s.handleSettingsError(ctx, w, r, ctxUpdate, p, err)
+	}
+	if address := matchingAddress(i, email, false); address != nil && !address.Verified {
+		address.Verified, address.Status = true, identity.VerifiableAddressStatusCompleted
+		address.VerifiedAt = new(sqlxx.NullTime(time.Now().UTC().Round(time.Second)))
+	}
+
 	if err := s.linkCredentials(ctx, i, token, provider.Config().ID, claims.Subject, provider.Config().OrganizationID); err != nil {
 		return s.handleSettingsError(ctx, w, r, ctxUpdate, p, err)
 	}
 
-	// Add authentication method to session after
-	// linking with 3rd party OIDC provider
-	if err := s.d.SessionManager().SessionAddAuthenticationMethods(
-		ctx,
-		ctxUpdate.Session.ID,
-		session.AuthenticationMethod{
-			Method:       s.ID(),
-			AAL:          identity.AuthenticatorAssuranceLevel1,
-			Provider:     provider.Config().ID,
-			Organization: provider.Config().OrganizationID,
-		}); err != nil {
-		return s.handleSettingsError(ctx, w, r, ctxUpdate, p, err)
-	}
-
 	if err := s.d.SettingsHookExecutor().PostSettingsHook(ctx, w, r, s.SettingsStrategyID(), ctxUpdate, i, settings.WithCallback(func(ctxUpdate *settings.UpdateContext) error {
+		// Record provider authentication only after the credential has been saved.
+		if err := s.d.SessionManager().SessionAddAuthenticationMethods(
+			ctx,
+			ctxUpdate.Session.ID,
+			session.AuthenticationMethod{
+				Method:       s.ID(),
+				AAL:          identity.AuthenticatorAssuranceLevel1,
+				Provider:     provider.Config().ID,
+				Organization: provider.Config().OrganizationID,
+			}); err != nil {
+			return err
+		}
 		// Credential population is done by PostSettingsHook on ctxUpdate.Session.Identity
 		return s.PopulateSettingsMethod(ctx, r, ctxUpdate.Session.Identity, ctxUpdate.Flow)
 	})); err != nil {

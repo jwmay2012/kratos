@@ -16,6 +16,7 @@ import (
 	"github.com/tidwall/sjson"
 
 	"github.com/ory/herodot"
+	"github.com/ory/jsonschema/v3"
 	"github.com/ory/kratos/identity"
 	"github.com/ory/kratos/selfservice/flow"
 	"github.com/ory/kratos/selfservice/flow/login"
@@ -59,9 +60,6 @@ func trustedEmail(c *Claims, provider *Configuration) string {
 }
 
 func (s *Strategy) rememberVerifiedEmail(f flow.InternalContexter, c *Claims, provider Provider) error {
-	if provider.Config().AccountLinkingMode != AccountLinkingModeAutomatic {
-		return nil
-	}
 	if trustedEmail(c, provider.Config()) == "" && !gjson.GetBytes(f.GetInternalContext(), verifiedEmailContext).Exists() {
 		return nil
 	}
@@ -94,6 +92,18 @@ func matchingAddress(i *identity.Identity, email string, verified bool) *identit
 		a := &i.VerifiableAddresses[n]
 		if a.Via == identity.AddressTypeEmail && strings.EqualFold(strings.TrimSpace(a.Value), email) && (!verified || a.Verified) {
 			return a
+		}
+	}
+	return nil
+}
+
+func validateLinkEmail(i *identity.Identity, verifiedEmail string) error {
+	for _, address := range i.VerifiableAddresses {
+		if address.Via == identity.AddressTypeEmail && !address.Verified &&
+			(verifiedEmail == "" || !strings.EqualFold(strings.TrimSpace(address.Value), verifiedEmail)) {
+			return errors.WithStack(&jsonschema.ValidationError{
+				Message: "Please verify your email before linking another sign-in method.", InstancePtr: "#/",
+			})
 		}
 	}
 	return nil
@@ -207,9 +217,6 @@ func (s *Strategy) verifyLinkedAddress(ctx context.Context, i *identity.Identity
 }
 
 func (s *Strategy) recordVerifiedEmail(ctx context.Context, i *identity.Identity, claims *Claims, provider Provider) {
-	if provider.Config().AccountLinkingMode != AccountLinkingModeAutomatic {
-		return
-	}
 	email := trustedEmail(claims, provider.Config())
 	if email == "" || !i.IsActive() {
 		return
@@ -241,6 +248,9 @@ func (s *Strategy) persistLinkedCredentials(ctx context.Context, i *identity.Ide
 		if link.Automatic && (link.VerifiedEmail == "" || matchingAddress(current, link.VerifiedEmail, true) == nil ||
 			(p.Organization != "" && (!current.OrganizationID.Valid || current.OrganizationID.UUID.String() != p.Organization))) {
 			return herodot.ErrForbidden.WithReason("The identity no longer matches the verified SSO email")
+		}
+		if err := validateLinkEmail(current, link.VerifiedEmail); err != nil {
+			return err
 		}
 		if link.VerifiedEmail != "" {
 			if err := s.verifyLinkedAddress(ctx, current, link.VerifiedEmail); err != nil {
