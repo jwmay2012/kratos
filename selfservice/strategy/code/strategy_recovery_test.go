@@ -409,6 +409,10 @@ func TestRecovery(t *testing.T) {
 							Identifiers: []string{testhelpers.RandomEmail()},
 						})
 
+						// Established accounts retain their second factor during recovery.
+						for k := range id.VerifiableAddresses {
+							id.VerifiableAddresses[k].Verified = true
+						}
 						require.NoError(t, reg.IdentityManager().Update(ctx, id, identity.ManagerAllowWriteProtectedTraits))
 						return testhelpers.InitializeRecoveryFlowViaBrowser(t, client, false, public, url.Values{"return_to": []string{returnTo}})
 					},
@@ -1244,6 +1248,10 @@ func TestRecovery_WithContinueWith(t *testing.T) {
 							Identifiers: []string{testhelpers.RandomEmail()},
 						})
 
+						// Established accounts retain their second factor during recovery.
+						for k := range id.VerifiableAddresses {
+							id.VerifiableAddresses[k].Verified = true
+						}
 						require.NoError(t, reg.IdentityManager().Update(ctx, id, identity.ManagerAllowWriteProtectedTraits))
 						return testhelpers.InitializeRecoveryFlowViaBrowser(t, client, false, public, url.Values{"return_to": []string{returnTo}})
 					},
@@ -2181,6 +2189,10 @@ func TestRecovery_V2_WithContinueWith_OneAddress_Email(t *testing.T) {
 							Identifiers: []string{testhelpers.RandomEmail()},
 						})
 
+						// Established accounts retain their second factor during recovery.
+						for k := range id.VerifiableAddresses {
+							id.VerifiableAddresses[k].Verified = true
+						}
 						require.NoError(t, reg.IdentityManager().Update(ctx, id, identity.ManagerAllowWriteProtectedTraits))
 						return testhelpers.InitializeRecoveryFlowViaBrowser(t, client, false, public, url.Values{"return_to": []string{returnTo}})
 					},
@@ -2942,6 +2954,10 @@ func TestRecovery_V2_WithContinueWith_OneAddress_Phone(t *testing.T) {
 							Identifiers: []string{testhelpers.RandomPhone()},
 						})
 
+						// Established accounts retain their second factor during recovery.
+						for k := range id.VerifiableAddresses {
+							id.VerifiableAddresses[k].Verified = true
+						}
 						require.NoError(t, reg.IdentityManager().Update(ctx, id, identity.ManagerAllowWriteProtectedTraits))
 						return testhelpers.InitializeRecoveryFlowViaBrowser(t, client, false, public, url.Values{"return_to": []string{returnTo}})
 					},
@@ -3757,6 +3773,10 @@ func TestRecovery_V2_WithContinueWith_SeveralAddresses(t *testing.T) {
 							Identifiers: []string{testhelpers.RandomPhone()},
 						})
 
+						// Established accounts retain their second factor during recovery.
+						for k := range id.VerifiableAddresses {
+							id.VerifiableAddresses[k].Verified = true
+						}
 						require.NoError(t, reg.IdentityManager().Update(ctx, id, identity.ManagerAllowWriteProtectedTraits))
 						return testhelpers.InitializeRecoveryFlowViaBrowser(t, client, false, public, url.Values{"return_to": []string{returnTo}})
 					},

@@ -220,7 +220,7 @@ func (e *HookExecutor) PostSettingsHook(ctx context.Context, w http.ResponseWrit
 		e.d.Logger().WithRequest(r).WithFields(logFields).Debug("ExecuteSettingsPrePersistHook completed successfully.")
 	}
 
-	options := []identity.ManagerOption{identity.ManagerExposeValidationErrorsForInternalTypeAssertion}
+	options := []identity.ManagerOption{identity.ManagerExposeValidationErrorsForInternalTypeAssertion, identity.ManagerRequireActiveSession(ctxUpdate.Session.ID)}
 	ttl := e.d.Config().SelfServiceFlowSettingsPrivilegedSessionMaxAge(ctx)
 	if ctxUpdate.Session.AuthenticatedAt.Add(ttl).After(time.Now()) {
 		options = append(options, identity.ManagerAllowWriteProtectedTraits)

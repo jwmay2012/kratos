@@ -38,6 +38,11 @@ func (o UpdateIdentityOptions) FromDatabase() *Identity {
 	return o.fromDatabase
 }
 
+// RequireActiveSession rejects a settings write if its session was revoked before the write locked the identity.
+func RequireActiveSession(id uuid.UUID) UpdateIdentityModifier {
+	return func(o *UpdateIdentityOptions) { o.SessionID = id }
+}
+
 type (
 	ListIdentityParameters struct {
 		Expand                       Expandables
@@ -57,6 +62,7 @@ type (
 	UpdateIdentityModifier func(*UpdateIdentityOptions)
 	UpdateIdentityOptions  struct {
 		fromDatabase *Identity
+		SessionID    uuid.UUID
 	}
 
 	Pool interface {
