@@ -144,8 +144,8 @@ func (s *Strategy) migratePasswordHash(ctx context.Context, proof *identity.Iden
 	}
 
 	c, ok := i.GetCredentials(s.ID())
-	if !ok {
-		return errors.New("expected to find password credential but could not")
+	if !ok || c.ID != proof.Credentials[s.ID()].ID {
+		return errors.New("password credential changed during hash migration")
 	}
 
 	c.Config = co

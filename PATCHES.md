@@ -120,8 +120,8 @@ with unaudited historical verification repair.
 
 ## Recovery of unverified addresses
 
-When a self-service recovery code proves a currently unverified address, retire
-the identity's existing credentials and sessions in the same transaction that
+When the `code` recovery strategy proves a currently unverified address, retire
+the identity's existing credentials, including second factors, and sessions in the same transaction that
 verifies the address. The newly issued recovery session can set a replacement
 password. Identity IDs, traits, metadata and addresses remain; schema-derived
 identifier placeholders reserve the account without retaining a usable password.
@@ -138,6 +138,8 @@ or provider list afterward. This check also respects session expiration.
 Password-confirmed linking similarly rechecks the persisted credential row IDs
 under that lock. Legitimate password-hash migration refreshes the proof's row
 IDs so it does not cause a false refusal.
+Login finalization is a separate follow-up; this increment does not change the
+final session-issuance step or the legacy `link` recovery strategy.
 
 The local recovery regressions exercise browser/native requests, unrelated
 verified addresses, credential/session preservation, immediate password denial,

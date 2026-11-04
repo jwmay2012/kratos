@@ -856,22 +856,19 @@ func (s *Strategy) completeSelfServiceRecovery(ctx context.Context, recovered *i
 				return err
 			}
 		}
-		if retire {
-			current.Credentials = make(map[identity.CredentialsType]identity.Credentials)
-			// Retain schema-derived identifiers, with no usable password or provider credentials.
-			if err := s.deps.IdentityValidator().Validate(ctx, current); err != nil {
-				return err
-			}
+		if !retire {
+			return nil
+		}
+		current.Credentials = make(map[identity.CredentialsType]identity.Credentials)
+		// Retain schema-derived identifiers and recompute AAL without a usable password or provider credential.
+		if err := s.deps.IdentityManager().ValidateIdentity(ctx, current, &identity.ManagerOptions{}); err != nil {
+			return err
 		}
 		if err := pool.UpdateIdentity(ctx, current); err != nil {
 			return err
 		}
-		if retire {
-			if _, err := s.deps.SessionPersister().RevokeSessionsIdentityExcept(ctx, current.ID, uuid.Nil); err != nil {
-				return err
-			}
-		}
-		return nil
+		_, err = s.deps.SessionPersister().RevokeSessionsIdentityExcept(ctx, current.ID, uuid.Nil)
+		return err
 	})
 	if err == nil {
 		*recovered = *current

@@ -23,9 +23,9 @@ done
 go test -p 2 -parallel 1 -tags sqlite -count=1 ./selfservice/strategy/oidc -run "$oidc_tests" -timeout 5m
 go test -p 2 -parallel 1 -tags sqlite -count=1 ./selfservice/flow ./selfservice/flow/login ./selfservice/hook ./session -timeout 10m
 
-recovery_tests='Test(Recovery(UnverifiedCredentials|RetirementRollback|RejectsPendingSettings)|AdminStrategy)$'
+recovery_tests='Test(Recovery(UnverifiedCredentials|RetirementRollback|RejectsPendingSettings|VerifiedInvalidTraits|PreventsPasswordMigration)|AdminStrategy)$'
 listed=$(go test -tags sqlite ./selfservice/strategy/code -list "$recovery_tests")
-for name in TestRecoveryUnverifiedCredentials TestRecoveryRetirementRollback TestRecoveryRejectsPendingSettings TestAdminStrategy; do
+for name in TestRecoveryUnverifiedCredentials TestRecoveryRetirementRollback TestRecoveryRejectsPendingSettings TestRecoveryVerifiedInvalidTraits TestRecoveryPreventsPasswordMigration TestAdminStrategy; do
     printf '%s\n' "$listed" | grep -Fxq "$name" || {
         printf 'Required fork regression is missing: %s\n' "$name" >&2
         exit 1

@@ -4,6 +4,7 @@
 package code_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -19,14 +20,18 @@ import (
 
 	"github.com/ory/kratos/driver"
 	"github.com/ory/kratos/driver/config"
+	"github.com/ory/kratos/hash"
 	"github.com/ory/kratos/identity"
 	"github.com/ory/kratos/pkg"
 	"github.com/ory/kratos/pkg/testhelpers"
 	"github.com/ory/kratos/selfservice/flow"
 	"github.com/ory/kratos/selfservice/flow/login"
 	"github.com/ory/kratos/selfservice/flow/recovery"
+	"github.com/ory/kratos/selfservice/strategy/password"
+	"github.com/ory/kratos/x"
 	"github.com/ory/kratos/x/nosurfx"
 	"github.com/ory/x/configx"
+	"github.com/ory/x/sqlxx"
 )
 
 const recoveryOldPassword = "PreviousFixturePassword12345678"
@@ -45,16 +50,19 @@ func recoveryOwnershipFixture(t *testing.T, verified bool, extra ...configx.Opti
 	testhelpers.NewErrorTestServer(t, reg)
 	server, _ := testhelpers.NewKratosServer(t, reg)
 	i := identity.NewIdentity(config.DefaultIdentityTraitsSchemaID)
+	i.ID = x.NewUUID()
 	email := testhelpers.RandomEmail()
 	i.Traits = identity.Traits(`{"email":"` + email + `"}`)
 	i.MetadataAdmin = []byte(`{"retained":"admin"}`)
 	i.MetadataPublic = []byte(`{"retained":"public"}`)
+	i.ExternalID = sqlxx.NullString("fixture-" + i.ID.String())
 	hash, err := reg.Hasher(ctx).Generate(ctx, []byte(recoveryOldPassword))
 	require.NoError(t, err)
 	password, err := json.Marshal(identity.CredentialsPassword{HashedPassword: string(hash)})
 	require.NoError(t, err)
 	i.UpsertCredentialsConfig(identity.CredentialsTypePassword, password, 0)
-	i.SetCredentials(identity.CredentialsTypeOIDC, identity.Credentials{Type: identity.CredentialsTypeOIDC, Identifiers: []string{"fixture:original-subject"}, Config: []byte(`{"providers":[{"provider":"fixture","subject":"original-subject"}]}`)})
+	subject := "original-" + i.ID.String()
+	i.SetCredentials(identity.CredentialsTypeOIDC, identity.Credentials{Type: identity.CredentialsTypeOIDC, Identifiers: []string{"fixture:" + subject}, Config: []byte(fmt.Sprintf(`{"providers":[{"provider":"fixture","subject":%q}]}`, subject))})
 	require.NoError(t, reg.IdentityManager().Create(ctx, i))
 	if verified {
 		i.VerifiableAddresses[0].Verified = true
@@ -83,12 +91,17 @@ func ownershipRecoveryCode(t *testing.T, reg *driver.RegistryDefault, server *ht
 }
 
 func TestRecoveryUnverifiedCredentials(t *testing.T) {
+	testRecoveryUnverifiedCredentials(t)
+}
+
+func testRecoveryUnverifiedCredentials(t *testing.T, extra ...configx.OptionModifier) {
+	t.Helper()
 	for _, api := range []bool{false, true} {
 		for _, verification := range []string{"unverified", "verified", "other-address-verified", "unverified-mfa"} {
 			t.Run(fmt.Sprintf("api=%t/%s", api, verification), func(t *testing.T) {
 				ctx := context.Background()
 				verified := verification == "verified"
-				reg, server, before := recoveryOwnershipFixture(t, verified)
+				reg, server, before := recoveryOwnershipFixture(t, verified, extra...)
 				if verification == "unverified-mfa" {
 					reg.Config().MustSet(ctx, config.ViperKeySessionWhoAmIAAL, config.HighestAvailableAAL)
 					reg.Config().MustSet(ctx, config.ViperKeySelfServiceSettingsRequiredAAL, config.HighestAvailableAAL)
@@ -108,8 +121,12 @@ func TestRecoveryUnverifiedCredentials(t *testing.T) {
 					}
 					require.NoError(t, reg.PrivilegedIdentityPool().UpdateIdentity(ctx, before))
 				}
-				oldBrowser := testhelpers.NewHTTPClientWithIdentitySessionCookie(ctx, t, reg, before)
-				oldNative := testhelpers.NewHTTPClientWithIdentitySessionToken(ctx, t, reg, before)
+				browserSession, err := testhelpers.NewActiveSession(httptest.NewRequest(http.MethodGet, server.URL, nil), reg, before, time.Now().UTC(), identity.CredentialsTypePassword, identity.AuthenticatorAssuranceLevel1)
+				require.NoError(t, err)
+				nativeSession, err := testhelpers.NewActiveSession(httptest.NewRequest(http.MethodGet, server.URL, nil), reg, before, time.Now().UTC(), identity.CredentialsTypePassword, identity.AuthenticatorAssuranceLevel1)
+				require.NoError(t, err)
+				oldBrowser := testhelpers.NewHTTPClientWithSessionCookie(ctx, t, reg, browserSession)
+				oldNative := testhelpers.NewHTTPClientWithSessionToken(ctx, t, reg, nativeSession)
 				client, action, code := ownershipRecoveryCode(t, reg, server, before, api)
 				var body []byte
 				if api {
@@ -130,11 +147,19 @@ func TestRecoveryUnverifiedCredentials(t *testing.T) {
 				for _, previousAddress := range before.VerifiableAddresses {
 					if previousAddress.Value == address.Value && previousAddress.Via == address.Via {
 						require.Equal(t, previousAddress.ID, address.ID)
+					} else {
+						other, err := reg.IdentityPool().FindVerifiableAddressByValue(ctx, previousAddress.Via, previousAddress.Value)
+						require.NoError(t, err)
+						require.Equal(t, previousAddress.ID, other.ID)
+						require.Equal(t, previousAddress.Verified, other.Verified)
 					}
 				}
 				require.JSONEq(t, string(before.Traits), string(after.Traits))
 				require.Equal(t, before.MetadataAdmin, after.MetadataAdmin)
 				require.Equal(t, before.MetadataPublic, after.MetadataPublic)
+				require.Equal(t, before.State, after.State)
+				require.Equal(t, before.ExternalID, after.ExternalID)
+				require.Equal(t, before.OrganizationID, after.OrganizationID)
 				require.ElementsMatch(t, before.RecoveryAddresses, after.RecoveryAddresses)
 				if verified {
 					require.Equal(t, before.Credentials, after.Credentials)
@@ -142,7 +167,7 @@ func TestRecoveryUnverifiedCredentials(t *testing.T) {
 					require.NotContains(t, after.Credentials, identity.CredentialsTypeWebAuthn)
 					require.Empty(t, after.Credentials[identity.CredentialsTypeOIDC].Identifiers)
 					require.Empty(t, gjson.GetBytes(after.Credentials[identity.CredentialsTypePassword].Config, "hashed_password").String())
-					_, _, err := reg.PrivilegedIdentityPool().FindByCredentialsIdentifier(ctx, identity.CredentialsTypeOIDC, "fixture:original-subject")
+					_, _, err := reg.PrivilegedIdentityPool().FindByCredentialsIdentifier(ctx, identity.CredentialsTypeOIDC, before.Credentials[identity.CredentialsTypeOIDC].Identifiers[0])
 					require.Error(t, err)
 					duplicate := identity.NewIdentity(config.DefaultIdentityTraitsSchemaID)
 					duplicate.Traits = append(identity.Traits(nil), before.Traits...)
@@ -199,11 +224,21 @@ func TestRecoveryUnverifiedCredentials(t *testing.T) {
 }
 
 func TestRecoveryRetirementRollback(t *testing.T) {
+	t.Run("credentials", func(t *testing.T) {
+		testRecoveryRollback(t, "CREATE TRIGGER fail_retirement BEFORE DELETE ON identity_credentials BEGIN SELECT RAISE(ABORT, 'injected retirement failure'); END")
+	})
+	t.Run("sessions", func(t *testing.T) {
+		testRecoveryRollback(t, "CREATE TRIGGER fail_retirement BEFORE UPDATE OF active ON sessions BEGIN SELECT RAISE(ABORT, 'injected revocation failure'); END")
+	})
+}
+
+func testRecoveryRollback(t *testing.T, failure string) {
+	t.Helper()
 	ctx := context.Background()
 	reg, server, before := recoveryOwnershipFixture(t, false)
 	previous := testhelpers.NewHTTPClientWithIdentitySessionCookie(ctx, t, reg, before)
 	client, action, code := ownershipRecoveryCode(t, reg, server, before, true)
-	require.NoError(t, reg.Persister().GetConnection(ctx).RawQuery("CREATE TRIGGER fail_retirement BEFORE DELETE ON identity_credentials BEGIN SELECT RAISE(ABORT, 'injected retirement failure'); END").Exec())
+	require.NoError(t, reg.Persister().GetConnection(ctx).RawQuery(failure).Exec())
 	body, _ := testhelpers.HTTPRequestJSON(t, client, http.MethodPost, action, map[string]string{"method": "code", "code": code})
 	require.Empty(t, gjson.GetBytes(body, "continue_with.#(action==set_ory_session_token).ory_session_token").String())
 	after, err := reg.PrivilegedIdentityPool().GetIdentityConfidential(ctx, before.ID)
@@ -215,7 +250,9 @@ func TestRecoveryRetirementRollback(t *testing.T) {
 }
 
 func TestRecoveryRejectsPendingSettings(t *testing.T) {
-	testRecoveryPendingSettings(t)
+	for _, method := range []string{"password", "profile"} {
+		t.Run(method, func(t *testing.T) { testRecoveryPendingSettings(t, method) })
+	}
 }
 
 func TestRecoveryRetirementPostgres(t *testing.T) {
@@ -227,10 +264,13 @@ func TestRecoveryRetirementPostgres(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, []string{"127.0.0.1", "localhost"}, u.Hostname())
 	require.Equal(t, "/kratos_recovery_test", u.Path)
-	testRecoveryPendingSettings(t, configx.WithValue(config.ViperKeyDSN, dsn))
+	t.Run("pending-password", func(t *testing.T) {
+		testRecoveryPendingSettings(t, "password", configx.WithValue(config.ViperKeyDSN, dsn))
+	})
+	t.Run("lifecycle", func(t *testing.T) { testRecoveryUnverifiedCredentials(t, configx.WithValue(config.ViperKeyDSN, dsn)) })
 }
 
-func testRecoveryPendingSettings(t *testing.T, extra ...configx.OptionModifier) {
+func testRecoveryPendingSettings(t *testing.T, method string, extra ...configx.OptionModifier) {
 	t.Helper()
 	ctx := context.Background()
 	reg, server, before := recoveryOwnershipFixture(t, false, extra...)
@@ -244,11 +284,16 @@ func testRecoveryPendingSettings(t *testing.T, extra ...configx.OptionModifier) 
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	t.Cleanup(validator.Close)
-	reg.Config().MustSet(ctx, "selfservice.flows.settings.after.password.hooks", []map[string]any{{"hook": "web_hook", "config": map[string]any{"url": validator.URL, "method": "POST", "body": "base64://e30=", "can_interrupt": true}}})
+	reg.Config().MustSet(ctx, "selfservice.flows.settings.after."+method+".hooks", []map[string]any{{"hook": "web_hook", "config": map[string]any{"url": validator.URL, "method": "POST", "body": "base64://e30=", "can_interrupt": true}}})
 	f := testhelpers.InitializeSettingsFlowViaAPI(t, attacker, server)
 	done := make(chan []byte, 1)
 	go func() {
-		body, _ := testhelpers.HTTPRequestJSON(t, attacker, http.MethodPost, f.Ui.Action, map[string]string{"method": "password", "password": "AttackerReplacementPassword123456"})
+		payload := map[string]any{"method": method, "password": "AttackerReplacementPassword123456"}
+		if method == "profile" {
+			payload = map[string]any{"method": method, "traits": json.RawMessage(before.Traits)}
+		}
+		body, response := testhelpers.HTTPRequestJSON(t, attacker, http.MethodPost, f.Ui.Action, payload)
+		require.Equal(t, http.StatusUnauthorized, response.StatusCode, "%s", body)
 		done <- body
 	}()
 	select {
@@ -271,4 +316,78 @@ func testRecoveryPendingSettings(t *testing.T, extra ...configx.OptionModifier) 
 	require.NoError(t, err)
 	require.Empty(t, after.Credentials[identity.CredentialsTypeOIDC].Identifiers)
 	require.Empty(t, gjson.GetBytes(after.Credentials[identity.CredentialsTypePassword].Config, "hashed_password").String())
+}
+
+func TestRecoveryVerifiedInvalidTraits(t *testing.T) {
+	ctx := context.Background()
+	reg, server, before := recoveryOwnershipFixture(t, true)
+	client, action, code := ownershipRecoveryCode(t, reg, server, before, true)
+	// A schema change or legacy import may leave an established identity with invalid traits.
+	require.NoError(t, reg.Persister().GetConnection(ctx).RawQuery("UPDATE identities SET traits = ? WHERE id = ? AND nid = ?", `{"email":42}`, before.ID, before.NID).Exec())
+	body, _ := testhelpers.HTTPRequestJSON(t, client, http.MethodPost, action, map[string]string{"method": "code", "code": code})
+	require.NotEmpty(t, gjson.GetBytes(body, "continue_with.#(action==set_ory_session_token).ory_session_token").String(), "%s", body)
+	after, err := reg.PrivilegedIdentityPool().GetIdentityConfidential(ctx, before.ID)
+	require.NoError(t, err)
+	require.JSONEq(t, `{"email":42}`, string(after.Traits))
+	require.Equal(t, before.Credentials, after.Credentials)
+}
+
+type recoveryMigrationHasher struct {
+	hash.Hasher
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (h recoveryMigrationHasher) Generate(ctx context.Context, plain []byte) ([]byte, error) {
+	h.entered <- struct{}{}
+	<-h.release
+	return h.Hasher.Generate(ctx, plain)
+}
+
+func (h recoveryMigrationHasher) Understands([]byte) bool { return false }
+
+type recoveryMigrationRegistry struct {
+	*driver.RegistryDefault
+	hasher hash.Hasher
+}
+
+func (r recoveryMigrationRegistry) Hasher(context.Context) hash.Hasher { return r.hasher }
+
+func TestRecoveryPreventsPasswordMigration(t *testing.T) {
+	ctx := context.Background()
+	reg, server, before := recoveryOwnershipFixture(t, false)
+	entered, release := make(chan struct{}, 1), make(chan struct{})
+	strategy := password.NewStrategy(recoveryMigrationRegistry{reg, recoveryMigrationHasher{reg.Hasher(ctx), entered, release}})
+	loginFlow := testhelpers.InitializeLoginFlowViaAPI(t, nil, server, false)
+	f, err := reg.LoginFlowPersister().GetLoginFlow(ctx, x.ParseUUID(loginFlow.Id))
+	require.NoError(t, err)
+	data, err := json.Marshal(map[string]string{"method": "password", "identifier": gjson.GetBytes(before.Traits, "email").String(), "password": recoveryOldPassword})
+	require.NoError(t, err)
+	request := httptest.NewRequest(http.MethodPost, loginFlow.Ui.Action, bytes.NewReader(data))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json")
+	done := make(chan error, 1)
+	go func() { _, loginErr := strategy.Login(httptest.NewRecorder(), request, f, nil); done <- loginErr }()
+	select {
+	case <-entered:
+	case loginErr := <-done:
+		close(release)
+		t.Fatalf("login returned before migration: %+v", loginErr)
+	case <-time.After(10 * time.Second):
+		close(release)
+		t.Fatal("hash migration did not start")
+	}
+	client, action, code := ownershipRecoveryCode(t, reg, server, before, true)
+	body, _ := testhelpers.HTTPRequestJSON(t, client, http.MethodPost, action, map[string]string{"method": "code", "code": code})
+	close(release)
+	require.NotEmpty(t, gjson.GetBytes(body, "continue_with.#(action==set_ory_session_token).ory_session_token").String(), "%s", body)
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("hash migration did not finish")
+	}
+	after, err := reg.PrivilegedIdentityPool().GetIdentityConfidential(ctx, before.ID)
+	require.NoError(t, err)
+	require.Empty(t, gjson.GetBytes(after.Credentials[identity.CredentialsTypePassword].Config, "hashed_password").String())
+	require.Empty(t, after.Credentials[identity.CredentialsTypeOIDC].Identifiers)
 }
