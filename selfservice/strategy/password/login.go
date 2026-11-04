@@ -15,7 +15,6 @@ import (
 
 	"github.com/ory/x/otelx"
 
-	"github.com/gofrs/uuid"
 	"github.com/pkg/errors"
 
 	"github.com/ory/herodot"
@@ -103,7 +102,7 @@ func (s *Strategy) Login(w http.ResponseWriter, r *http.Request, f *login.Flow, 
 			return nil, s.handleLoginError(r, f, p, x.WrapWithIdentityIDError(err, i.ID))
 		}
 
-		if err := s.migratePasswordHash(ctx, i.ID, []byte(p.Password)); err != nil {
+		if err := s.migratePasswordHash(ctx, i, []byte(p.Password)); err != nil {
 			return nil, s.handleLoginError(r, f, p, x.WrapWithIdentityIDError(err, i.ID))
 		}
 	} else {
@@ -112,7 +111,7 @@ func (s *Strategy) Login(w http.ResponseWriter, r *http.Request, f *login.Flow, 
 		}
 
 		if !s.d.Hasher(ctx).Understands([]byte(o.HashedPassword)) {
-			if err := s.migratePasswordHash(ctx, i.ID, []byte(p.Password)); err != nil {
+			if err := s.migratePasswordHash(ctx, i, []byte(p.Password)); err != nil {
 				s.d.Logger().Warnf("Unable to migrate password hash for identity %s: %s Keeping existing password hash and continuing.", i.ID, x.WrapWithIdentityIDError(err, i.ID))
 			}
 		}
@@ -126,7 +125,7 @@ func (s *Strategy) Login(w http.ResponseWriter, r *http.Request, f *login.Flow, 
 	return i, nil
 }
 
-func (s *Strategy) migratePasswordHash(ctx context.Context, identifier uuid.UUID, password []byte) (err error) {
+func (s *Strategy) migratePasswordHash(ctx context.Context, proof *identity.Identity, password []byte) (err error) {
 	ctx, span := s.d.Tracer(ctx).Tracer().Start(ctx, "selfservice.strategy.password.Strategy.migratePasswordHash")
 	defer otelx.End(span, &err)
 
@@ -139,7 +138,7 @@ func (s *Strategy) migratePasswordHash(ctx context.Context, identifier uuid.UUID
 		return errors.Wrap(err, "unable to encode password configuration to JSON")
 	}
 
-	i, err := s.d.PrivilegedIdentityPool().GetIdentityConfidential(ctx, identifier)
+	i, err := s.d.PrivilegedIdentityPool().GetIdentityConfidential(ctx, proof.ID)
 	if err != nil {
 		return err
 	}
@@ -152,7 +151,11 @@ func (s *Strategy) migratePasswordHash(ctx context.Context, identifier uuid.UUID
 	c.Config = co
 	i.SetCredentials(s.ID(), *c)
 
-	return s.d.IdentityManager().Update(ctx, i, identity.ManagerAllowWriteProtectedTraits)
+	if err := s.d.IdentityManager().Update(ctx, i, identity.ManagerAllowWriteProtectedTraits); err != nil {
+		return err
+	}
+	proof.Credentials = i.Credentials
+	return nil
 }
 
 func (s *Strategy) PopulateLoginMethodFirstFactorRefresh(r *http.Request, sr *login.Flow, _ *session.Session) (err error) {

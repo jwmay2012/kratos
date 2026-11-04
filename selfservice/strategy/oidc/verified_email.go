@@ -245,6 +245,9 @@ func (s *Strategy) persistLinkedCredentials(ctx context.Context, i *identity.Ide
 	}
 	linked := false
 	err := s.withLockedIdentity(ctx, i, func(ctx context.Context, current *identity.Identity) error {
+		if !link.Automatic && !identity.SameCredentialRows(i.Credentials, current.Credentials) {
+			return herodot.ErrForbidden.WithReason("The account credentials changed. Please sign in again before linking.")
+		}
 		if link.Automatic && (link.VerifiedEmail == "" || matchingAddress(current, link.VerifiedEmail, true) == nil ||
 			(p.Organization != "" && (!current.OrganizationID.Valid || current.OrganizationID.UUID.String() != p.Organization))) {
 			return herodot.ErrForbidden.WithReason("The identity no longer matches the verified SSO email")

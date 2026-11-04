@@ -29,6 +29,7 @@ import (
 	"github.com/ory/kratos/persistence/sql/batch"
 	"github.com/ory/kratos/persistence/sql/update"
 	"github.com/ory/kratos/schema"
+	"github.com/ory/kratos/session"
 	"github.com/ory/kratos/x"
 	"github.com/ory/kratos/x/events"
 	"github.com/ory/pop/v6"
@@ -1201,6 +1202,18 @@ func (p *IdentityPersister) UpdateIdentity(ctx context.Context, i *identity.Iden
 		// This returns "ErrNoRows" if the identity does not exist
 		if err := update.Generic(WithTransaction(ctx, tx), tx, p.r.Tracer(ctx).Tracer(), i); err != nil {
 			return err
+		}
+
+		// The identity row is now locked, serializing this check with recovery retirement.
+		if o.SessionID != uuid.Nil {
+			var authorized session.Session
+			err := tx.Where("id = ? AND identity_id = ? AND nid = ?", o.SessionID, i.ID, i.NID).First(&authorized)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return sqlcon.HandleError(err)
+			}
+			if err != nil || !authorized.IsActive() {
+				return session.NewErrNoActiveSessionFound()
+			}
 		}
 
 		var identityCreds map[identity.CredentialsType]identity.Credentials

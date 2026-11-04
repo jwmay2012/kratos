@@ -212,6 +212,20 @@ func (c Credentials) Signature() string {
 	return fmt.Sprintf("%v|%v|%d|%+v|%v|%v", c.Type, identifiersStr, c.Version, normalizedConfig, c.IdentityID, c.NID)
 }
 
+// SameCredentialRows compares persisted credential versions, including retirement or replacement.
+func SameCredentialRows(a, b map[CredentialsType]Credentials) bool {
+	if len(a) == 0 || len(a) != len(b) {
+		return false
+	}
+	for kind, credential := range a {
+		current, ok := b[kind]
+		if !ok || credential.ID == uuid.Nil || credential.ID != current.ID {
+			return false
+		}
+	}
+	return true
+}
+
 type (
 	// swagger:ignore
 	CredentialIdentifier struct {

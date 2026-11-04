@@ -118,6 +118,36 @@ the binary/provider option stops new automatic decisions; completed links remain
 ordinary credentials and are not removed by rollback. Do not combine rollout
 with unaudited historical verification repair.
 
+## Recovery of unverified addresses
+
+When a self-service recovery code proves a currently unverified address, retire
+the identity's existing credentials and sessions in the same transaction that
+verifies the address. The newly issued recovery session can set a replacement
+password. Identity IDs, traits, metadata and addresses remain; schema-derived
+identifier placeholders reserve the account without retaining a usable password.
+
+Already-verified addresses and administrator-issued recovery codes retain their
+credentials. Disabled identities are rejected before retirement. An abandoned
+reset does not restore the retired credentials: after the recovery session's
+privileged interval expires, the owner must recover again. Existing verification
+history is not a substitute for the recovered address's current state.
+
+Settings writes recheck their authorizing session while holding the identity
+row lock. A request prepared before retirement cannot restore a stale password
+or provider list afterward. This check also respects session expiration.
+Password-confirmed linking similarly rechecks the persisted credential row IDs
+under that lock. Legitimate password-hash migration refreshes the proof's row
+IDs so it does not cause a false refusal.
+
+The local recovery regressions exercise browser/native requests, unrelated
+verified addresses, credential/session preservation, immediate password denial,
+replacement passwords, transaction rollback and a paused settings request.
+`TestRecoveryRetiresOIDC` uses the existing Docker/Hydra fixture for signed
+provider registration, recovery, fresh login and legitimate relinking.
+`TestRecoveryRetirementPostgres` repeats the paused-write regression with
+`KRATOS_RECOVERY_TEST_DSN`, restricted to a disposable loopback PostgreSQL
+database named `kratos_recovery_test`.
+
 ## Verification
 
 The database-free image gate is:
@@ -127,7 +157,8 @@ sh test/fork.sh
 ```
 
 It fails if a required native-token regression disappears, verifies the native
-provider contracts, and runs the flow, hook, and session packages. It does not
+provider contracts, requires the recovery-retirement regressions, and runs the
+flow, settings, hook, and session packages. It does not
 claim to replace upstream's Docker-backed strategy or database matrix.
 
 The existing Docker-backed OIDC suite includes `TestSettingsVerifiedEmailOwnership`

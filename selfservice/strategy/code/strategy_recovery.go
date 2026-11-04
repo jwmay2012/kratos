@@ -4,6 +4,7 @@
 package code
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
@@ -25,6 +26,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/ory/herodot"
+	"github.com/ory/pop/v6"
 	"github.com/ory/x/decoderx"
 	"github.com/ory/x/otelx"
 	"github.com/ory/x/sqlxx"
@@ -372,7 +374,7 @@ func (s *Strategy) recoveryUseCode(w http.ResponseWriter, r *http.Request, body 
 
 	// mark address as verified only for a self-service flow
 	if code.CodeType == RecoveryCodeTypeSelfService {
-		if err := s.markRecoveryAddressVerified(w, r, f, recovered, code.RecoveryAddress); err != nil {
+		if err := s.completeSelfServiceRecovery(ctx, recovered, code.RecoveryAddress); err != nil {
 			return s.HandleRecoveryError(w, r, f, body, err)
 		}
 	}
@@ -820,19 +822,61 @@ func (s *Strategy) recoveryHandleFormSubmission(w http.ResponseWriter, r *http.R
 	return nil
 }
 
-func (s *Strategy) markRecoveryAddressVerified(w http.ResponseWriter, r *http.Request, f *recovery.Flow, id *identity.Identity, recoveryAddress *identity.RecoveryAddress) error {
-	for k, v := range id.VerifiableAddresses {
-		if v.Value == recoveryAddress.Value {
-			id.VerifiableAddresses[k].Verified = true
-			id.VerifiableAddresses[k].VerifiedAt = new(sqlxx.NullTime(time.Now().UTC()))
-			id.VerifiableAddresses[k].Status = identity.VerifiableAddressStatusCompleted
-			if err := s.deps.PrivilegedIdentityPool().UpdateVerifiableAddress(r.Context(), &id.VerifiableAddresses[k], "verified", "verified_at", "status"); err != nil {
-				return s.HandleRecoveryError(w, r, f, nil, err)
+func (s *Strategy) completeSelfServiceRecovery(ctx context.Context, recovered *identity.Identity, address *identity.RecoveryAddress) error {
+	var current *identity.Identity
+	err := s.deps.TransactionalPersisterProvider().Transaction(ctx, func(ctx context.Context, _ *pop.Connection) error {
+		pool := s.deps.PrivilegedIdentityPool()
+		if err := pool.UpdateIdentityColumns(ctx, &identity.Identity{ID: recovered.ID, UpdatedAt: time.Now().UTC()}, "updated_at"); err != nil {
+			return err
+		}
+		var err error
+		current, err = pool.GetIdentity(ctx, recovered.ID, identity.ExpandCredentials)
+		if err != nil {
+			return err
+		}
+		// A transaction has one connection: hydrate associations sequentially.
+		for _, field := range identity.ExpandDefault {
+			if err := pool.HydrateIdentityAssociations(ctx, current, identity.Expandables{field}); err != nil {
+				return err
 			}
 		}
+		if !current.IsActive() {
+			return session.ErrIdentityDisabled.WithDetail("identity_id", current.ID)
+		}
+		retire := false
+		for k, v := range current.VerifiableAddresses {
+			if v.Via != address.Via || v.Value != address.Value {
+				continue
+			}
+			retire = retire || !v.Verified
+			current.VerifiableAddresses[k].Verified = true
+			current.VerifiableAddresses[k].VerifiedAt = new(sqlxx.NullTime(time.Now().UTC().Truncate(time.Microsecond)))
+			current.VerifiableAddresses[k].Status = identity.VerifiableAddressStatusCompleted
+			if err := pool.UpdateVerifiableAddress(ctx, &current.VerifiableAddresses[k], "verified", "verified_at", "status"); err != nil {
+				return err
+			}
+		}
+		if retire {
+			current.Credentials = make(map[identity.CredentialsType]identity.Credentials)
+			// Retain schema-derived identifiers, with no usable password or provider credentials.
+			if err := s.deps.IdentityValidator().Validate(ctx, current); err != nil {
+				return err
+			}
+		}
+		if err := pool.UpdateIdentity(ctx, current); err != nil {
+			return err
+		}
+		if retire {
+			if _, err := s.deps.SessionPersister().RevokeSessionsIdentityExcept(ctx, current.ID, uuid.Nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err == nil {
+		*recovered = *current
 	}
-
-	return nil
+	return err
 }
 
 func (s *Strategy) HandleRecoveryError(w http.ResponseWriter, r *http.Request, fl *recovery.Flow, body *recoverySubmitPayload, err error) error {

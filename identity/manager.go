@@ -52,6 +52,7 @@ type (
 	ManagerOptions struct {
 		ExposeValidationErrors    bool
 		AllowWriteProtectedTraits bool
+		RequireActiveSession      uuid.UUID
 	}
 
 	ManagerOption func(*ManagerOptions)
@@ -67,6 +68,11 @@ func ManagerExposeValidationErrorsForInternalTypeAssertion(options *ManagerOptio
 
 func ManagerAllowWriteProtectedTraits(options *ManagerOptions) {
 	options.AllowWriteProtectedTraits = true
+}
+
+// ManagerRequireActiveSession rechecks settings authorization inside the identity write transaction.
+func ManagerRequireActiveSession(id uuid.UUID) ManagerOption {
+	return func(options *ManagerOptions) { options.RequireActiveSession = id }
 }
 
 func newManagerOptions(opts []ManagerOption) *ManagerOptions {
@@ -455,7 +461,7 @@ func (m *Manager) Update(ctx context.Context, updated *Identity, opts ...Manager
 		return err
 	}
 
-	return m.r.PrivilegedIdentityPool().UpdateIdentity(ctx, updated, DiffAgainst(original))
+	return m.r.PrivilegedIdentityPool().UpdateIdentity(ctx, updated, DiffAgainst(original), RequireActiveSession(o.RequireActiveSession))
 }
 
 func (m *Manager) UpdateSchemaID(ctx context.Context, id uuid.UUID, schemaID string, opts ...ManagerOption) (err error) {
