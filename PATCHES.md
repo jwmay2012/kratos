@@ -27,7 +27,7 @@ equivalent build inputs and trust-store handling.
 | Registration hook session | Keep the issued session in the post-registration template context | Existing HTTP/Jsonnet webhook matrix |
 | Hydra fixture readiness | Wait for both Docker port bindings before testing authentication | The complete OIDC strategy/settings test suites |
 | Verified upstream hook context | Expose request-scoped verified OIDC provider/claims to existing webhook templates | Carrier snapshot, Jsonnet object/absence, browser/native and conversion cases |
-| Verified-email linking | Attach a trusted SSO credential to the existing verified identity | Browser/native flows, verified/unverified password/enterprise/Google/Apple origins, OIDC-to-SAML continuity, MFA boundaries, stale state and concurrent writes |
+| Verified-email linking | Enforce email ownership across automatic, password-confirmed and settings linking | Browser/native flows, provider trust, recovery, OIDC-to-SAML continuity, MFA boundaries, stale state and concurrent writes |
 
 The optional `upstream_claims` template field contains the actual strategy method,
 provider ID and its verified claims, including `raw_claims`; it is not caller traits or
@@ -82,12 +82,35 @@ native API's separate MFA flow to carry pending credentials. Both native login
 and registration entry points cover that boundary. Existing-subject logins,
 session policies and the upstream custom conflict-policy extension are retained.
 
-For an automatic-enabled provider, a verified login on an existing subject or a
-completed login/registration linking ceremony can mark its matching address
-verified using Kratos's native address state. Thus an originally unverified
-password registration need not prevent a later trusted OIDC-to-SAML transition.
-Settings-page linking is unchanged; a subsequent verified SSO login can record
-the address verification. Historical records are not inferred or backfilled.
+Authenticated linking uses the existing account as its target. Every unverified
+email address on that account must match the incoming provider's trusted verified
+email; otherwise linking returns "Please verify your email before linking another
+sign-in method." An authenticated account whose emails are already verified may
+attach a provider identity with a different or unverified email. That incoming
+email does not become an account trait or gain verified status through the link.
+
+| Existing email | Incoming email proof | Sign-in without an existing-account session | Authenticated settings |
+| --- | --- | --- | --- |
+| Verified | Trusted, same email | Automatic when enabled | Link |
+| Verified | Untrusted, same email | Authenticate with the existing account first | Link |
+| Verified | Different email | No automatic association to this account | Link |
+| Unverified | Trusted, same email | Authenticate with the existing account, then link and verify | Link and verify |
+| Unverified | Untrusted or different email | Verify the account email first | Verify the account email first |
+
+Settings retains its normal session-recency and flow-binding checks. A successful
+matching trusted link verifies the address in the same identity update; a failed
+link does not record a new session authentication method. Manual linking rechecks
+email ownership inside the existing identity transaction. Proof is carried for
+both provider linking modes, and trusted logins on already-linked subjects can
+record matching email verification in either mode. The provider's mode controls
+automatic account selection, not whether its accepted proof can verify an email.
+An originally unverified password registration can therefore progress through
+password-confirmed linking to a later automatic OIDC-to-SAML transition.
+
+Ordinary sign-in does not attach unrelated emails to an incidental browser
+session. Applications use the existing account-bound settings flow when adding a
+provider to an authenticated account. No new verification continuation, identity
+merge, enterprise bypass or historical credential cleanup is introduced.
 
 There are no schema migrations or new public claims. Pending proof exists only
 in server-owned flow context, not stored OIDC credential configuration. Reverting
@@ -106,6 +129,17 @@ sh test/fork.sh
 It fails if a required native-token regression disappears, verifies the native
 provider contracts, and runs the flow, hook, and session packages. It does not
 claim to replace upstream's Docker-backed strategy or database matrix.
+
+The existing Docker-backed OIDC suite includes `TestSettingsVerifiedEmailOwnership`
+and `TestSettingsVerifiedEmailRecovery`. They use the shared Hydra fixture for
+signed provider callbacks, cover the verification/matching/provider-mode matrix,
+and prove that a refused link cannot survive email-code recovery and password
+replacement. They also cover a target changing while the callback is pending and
+a provider credential claimed by another identity. Run it with:
+
+```sh
+go test -p 2 -parallel 1 -tags sqlite -count=1 ./selfservice/strategy/oidc -timeout 10m
+```
 
 `TestVerifiedEmailConcurrentPostgres` additionally accepts `KRATOS_LINK_TEST_DSN`
 for a disposable PostgreSQL database named `kratos_link_test` on loopback only.

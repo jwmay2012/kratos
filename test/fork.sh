@@ -8,7 +8,9 @@ listed=$(go test -tags sqlite ./selfservice/strategy/oidc -list "$oidc_tests")
 for name in TestNativeIDTokenNonceCompatibility TestNativeIDTokenNonceCompatibilityStillRequiresValidClaims \
     TestMicrosoftNativeIDTokenVerification TestGenericNativeIDTokenVerification TestGoogleVerify TestAppleVerify \
     TestVerifiedEmailAutomaticLinking TestVerifiedEmailKnownOIDCThenSAML TestVerifiedEmailBrowserLinkingWaitsForMFA \
-    TestVerifiedEmailManualLinkRecordsProof TestVerifiedEmailNativeTokenFlows TestVerifiedEmailErrorAnnotations \
+    TestVerifiedEmailManualLinkRecordsProof TestVerifiedEmailManualLinkOwnership TestVerifiedEmailManualHTTPProof \
+    TestVerifiedEmailManualLinkRechecksOwnership TestVerifiedEmailManualLinkVerificationRollback TestVerifiedEmailExistingManualSSOProof \
+    TestVerifiedEmailNativeTokenFlows TestVerifiedEmailErrorAnnotations \
     TestVerifiedEmailProviderAndExistingAccountMatrix TestVerifiedEmailExistingSSORecordsTrustedProof \
     TestVerifiedEmailGoogleAuthorityAndMalformedClaims; do
     printf '%s\n' "$listed" | grep -Fxq "$name" || {

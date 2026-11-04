@@ -405,6 +405,165 @@ func TestVerifiedEmailManualLinkRecordsProof(t *testing.T) {
 	require.ElementsMatch(t, []string{"broker:first-oidc", "broker:replacement-saml"}, current.Credentials[identity.CredentialsTypeOIDC].Identifiers)
 }
 
+func TestVerifiedEmailManualLinkOwnership(t *testing.T) {
+	for _, verified := range []bool{false, true} {
+		for _, incoming := range []string{"", "person@example.test", "other@example.test"} {
+			t.Run(fmt.Sprintf("existing_verified=%t/incoming=%s", verified, incoming), func(t *testing.T) {
+				f := newVerifiedLinkFixture(t)
+				ctx := context.Background()
+				i := f.identity(t, "person@example.test", verified)
+				password := append([]byte(nil), i.Credentials[identity.CredentialsTypePassword].Config...)
+				data, err := json.Marshal(map[string]any{"providers": []map[string]string{{"provider": "broker", "subject": "new-subject"}}, "verified_email": incoming})
+				require.NoError(t, err)
+				err = f.strategy.Link(ctx, i, data)
+				allowed := verified || incoming == "person@example.test"
+				if allowed {
+					require.NoError(t, err)
+				} else {
+					require.ErrorContains(t, err, "Please verify your email")
+				}
+				current, err := f.reg.PrivilegedIdentityPool().GetIdentityConfidential(ctx, i.ID)
+				require.NoError(t, err)
+				require.Equal(t, allowed, current.VerifiableAddresses[0].Verified)
+				if allowed {
+					require.Equal(t, []string{"broker:new-subject"}, current.Credentials[identity.CredentialsTypeOIDC].Identifiers)
+				} else {
+					require.Empty(t, current.Credentials[identity.CredentialsTypeOIDC].Identifiers)
+				}
+				require.JSONEq(t, string(password), string(current.Credentials[identity.CredentialsTypePassword].Config))
+				require.JSONEq(t, string(i.Traits), string(current.Traits))
+			})
+		}
+	}
+}
+
+func TestVerifiedEmailManualHTTPProof(t *testing.T) {
+	for _, providerName := range []string{"enterprise", "google", "apple"} {
+		for _, mode := range []string{oidc.AccountLinkingModeAutomatic, oidc.AccountLinkingModeVerifyWithExistingCredential} {
+			for _, verified := range []bool{false, true} {
+				for _, incomingVerified := range []bool{false, true} {
+					t.Run(fmt.Sprintf("%s/mode=%s/existing_verified=%t/incoming_verified=%t", providerName, mode, verified, incomingVerified), func(t *testing.T) {
+						f := newVerifiedLinkFixture(t, configx.WithValues(testhelpers.MethodEnableConfig(identity.CredentialsTypePassword, true)))
+						ctx, email := context.Background(), "person@gmail.com"
+						f.provider.AccountLinkingMode = mode
+						provider, verify := verifiedProvider(t, f, providerName)
+						claims, err := verify(email, "new-subject", incomingVerified, "")
+						require.NoError(t, err)
+						i := f.identity(t, email, verified)
+						const password = "ExistingAccountPassword123456789"
+						hash, err := f.reg.Hasher(ctx).Generate(ctx, []byte(password))
+						require.NoError(t, err)
+						credential := i.Credentials[identity.CredentialsTypePassword]
+						credential.Config, err = json.Marshal(map[string]string{"hashed_password": string(hash)})
+						require.NoError(t, err)
+						i.SetCredentials(identity.CredentialsTypePassword, credential)
+						require.NoError(t, f.reg.PrivilegedIdentityPool().UpdateIdentity(ctx, i))
+						newUI(t, f.reg)
+						server, _ := testhelpers.NewKratosServer(t, f.reg)
+						w, _, _ := f.loginWithProvider(t, flow.TypeAPI, claims, provider)
+						if mode == oidc.AccountLinkingModeAutomatic && verified && incomingVerified {
+							require.Equal(t, i.ID.String(), gjson.Get(w.Body.String(), "session.identity.id").String(), "%s", w.Body.String())
+							return
+						}
+						flowID := gjson.Get(w.Body.String(), "id").String()
+						require.NotEmpty(t, flowID, "%s", w.Body.String())
+						for _, attempt := range []string{"WrongPassword123456789", password} {
+							payload, err := json.Marshal(map[string]string{"method": "password", "identifier": email, "password": attempt})
+							require.NoError(t, err)
+							req, err := http.NewRequest(http.MethodPost, server.URL+login.RouteSubmitFlow+"?flow="+flowID, bytes.NewReader(payload))
+							require.NoError(t, err)
+							req.Header.Set("Content-Type", "application/json")
+							req.Header.Set("Accept", "application/json")
+							res, err := http.DefaultClient.Do(req)
+							require.NoError(t, err)
+							body := x.MustReadAll(res.Body)
+							require.NoError(t, res.Body.Close())
+							allowed := attempt == password && (verified || incomingVerified)
+							current, err := f.reg.PrivilegedIdentityPool().GetIdentityConfidential(ctx, i.ID)
+							require.NoError(t, err)
+							if allowed {
+								require.Equal(t, http.StatusOK, res.StatusCode, "%s", body)
+								require.Equal(t, i.ID.String(), gjson.GetBytes(body, "session.identity.id").String())
+								require.Equal(t, []string{provider.Config().ID + ":new-subject"}, current.Credentials[identity.CredentialsTypeOIDC].Identifiers)
+								require.True(t, current.VerifiableAddresses[0].Verified)
+							} else {
+								require.Equal(t, http.StatusBadRequest, res.StatusCode, "%s", body)
+								require.Empty(t, current.Credentials[identity.CredentialsTypeOIDC].Identifiers)
+								require.False(t, gjson.GetBytes(body, "session_token").Exists())
+								if attempt == password {
+									require.Contains(t, string(body), "Please verify your email")
+								}
+							}
+							if attempt != password {
+								require.Equal(t, verified, current.VerifiableAddresses[0].Verified)
+							}
+							if next := gjson.GetBytes(body, "id").String(); next != "" {
+								flowID = next
+							}
+						}
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestVerifiedEmailManualLinkRechecksOwnership(t *testing.T) {
+	f := newVerifiedLinkFixture(t)
+	ctx := context.Background()
+	i := f.identity(t, "person@example.test", true)
+	stale, err := f.reg.PrivilegedIdentityPool().GetIdentityConfidential(ctx, i.ID)
+	require.NoError(t, err)
+	i.VerifiableAddresses[0].Verified = false
+	require.NoError(t, f.reg.PrivilegedIdentityPool().UpdateVerifiableAddress(ctx, &i.VerifiableAddresses[0], "verified"))
+	data := []byte(`{"providers":[{"provider":"broker","subject":"new-subject"}]}`)
+	require.ErrorContains(t, f.strategy.Link(ctx, stale, data), "Please verify your email")
+	current, err := f.reg.PrivilegedIdentityPool().GetIdentityConfidential(ctx, i.ID)
+	require.NoError(t, err)
+	require.False(t, current.VerifiableAddresses[0].Verified)
+	require.Empty(t, current.Credentials[identity.CredentialsTypeOIDC].Identifiers)
+}
+
+func TestVerifiedEmailManualLinkVerificationRollback(t *testing.T) {
+	f := newVerifiedLinkFixture(t)
+	ctx := context.Background()
+	i := f.identity(t, "person@example.test", false)
+	other := f.identity(t, "other@example.test", true)
+	credential, err := identity.NewCredentialsOIDC(nil, "broker", "owned-subject", "")
+	require.NoError(t, err)
+	other.SetCredentials(identity.CredentialsTypeOIDC, *credential)
+	require.NoError(t, f.reg.PrivilegedIdentityPool().UpdateIdentity(ctx, other))
+	data := []byte(`{"providers":[{"provider":"broker","subject":"owned-subject"}],"verified_email":"person@example.test"}`)
+	require.Error(t, f.strategy.Link(ctx, i, data))
+	current, err := f.reg.PrivilegedIdentityPool().GetIdentityConfidential(ctx, i.ID)
+	require.NoError(t, err)
+	require.False(t, current.VerifiableAddresses[0].Verified)
+	require.Empty(t, current.Credentials[identity.CredentialsTypeOIDC].Identifiers)
+}
+
+func TestVerifiedEmailExistingManualSSOProof(t *testing.T) {
+	for _, incoming := range []string{"", "person@example.test", "other@example.test"} {
+		t.Run(incoming, func(t *testing.T) {
+			f := newVerifiedLinkFixture(t)
+			ctx := context.Background()
+			f.provider.AccountLinkingMode = oidc.AccountLinkingModeVerifyWithExistingCredential
+			f.conf.MustSet(ctx, config.ViperKeySelfServiceStrategyConfig+".oidc.config.providers", []oidc.Configuration{*f.provider})
+			i := f.identity(t, "person@example.test", false)
+			credential, err := identity.NewCredentialsOIDC(nil, "broker", "existing-subject", "")
+			require.NoError(t, err)
+			i.SetCredentials(identity.CredentialsTypeOIDC, *credential)
+			require.NoError(t, f.reg.PrivilegedIdentityPool().UpdateIdentity(ctx, i))
+			w, _, err := f.login(t, flow.TypeAPI, verifiedClaims(incoming, "existing-subject"))
+			require.NoError(t, err)
+			require.Equal(t, i.ID.String(), gjson.Get(w.Body.String(), "session.identity.id").String())
+			current, err := f.reg.PrivilegedIdentityPool().GetIdentityConfidential(ctx, i.ID)
+			require.NoError(t, err)
+			require.Equal(t, incoming == "person@example.test", current.VerifiableAddresses[0].Verified)
+			require.Equal(t, credential.Identifiers, current.Credentials[identity.CredentialsTypeOIDC].Identifiers)
+		})
+	}
+}
+
 func TestVerifiedEmailConcurrentPostgres(t *testing.T) {
 	dsn := os.Getenv("KRATOS_LINK_TEST_DSN")
 	if dsn == "" {
